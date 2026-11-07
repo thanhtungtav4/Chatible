@@ -16,19 +16,26 @@
 
     <!-- Top QA & Presentation Bar for Desktop -->
     <header class="simulator-toolbar">
-      <span class="sim-tag">Mobile Web App Mockup</span>
-      <span style="font-size: 11px; color: var(--text-muted);">| Trạng thái Chat:</span>
-      <button class="sim-btn" data-set-state="IDLE">1. Chuẩn bị (IDLE)</button>
-      <button class="sim-btn" data-set-state="WAITING">2. Tìm (WAITING)</button>
-      <button class="sim-btn" data-set-state="CHATTING">3. Trò chuyện (CHATTING)</button>
-      <button class="sim-btn" data-set-state="RECONNECTING">4. Mất mạng</button>
-      <button class="sim-btn" data-set-state="ENDED">5. Kết thúc</button>
+      <span class="sim-tag">Mobile App Mockup</span>
+      <div class="theme-picker-group" title="Đổi bảng phối màu">
+        <button class="theme-pill-btn active" data-theme-btn="sunset" style="background: #ff4d6d;" title="1. Sunset Coral & Electric Rose"></button>
+        <button class="theme-pill-btn" data-theme-btn="indigo" style="background: #6366f1;" title="2. Cyber Indigo & Violet"></button>
+        <button class="theme-pill-btn" data-theme-btn="amber" style="background: #f59e0b;" title="3. Honey Gold & Amber"></button>
+        <button class="theme-pill-btn" data-theme-btn="emerald" style="background: #10b981;" title="4. Obsidian Emerald"></button>
+        <button class="theme-pill-btn" data-theme-btn="light" style="background: #ffffff; border-color: #cbd5e1;" title="5. Porcelain Light Mode"></button>
+      </div>
+      <span style="font-size: 11px; color: var(--text-muted);">| Trạng thái:</span>
+      <button class="sim-btn" data-set-state="IDLE">Chuẩn bị</button>
+      <button class="sim-btn" data-set-state="WAITING">Đang tìm</button>
+      <button class="sim-btn" data-set-state="CHATTING">Chat 1-1</button>
+      <button class="sim-btn" data-set-state="RECONNECTING">Mất mạng</button>
+      <button class="sim-btn" data-set-state="ENDED">Kết thúc</button>
       <span style="font-size: 11px; color: var(--text-muted);">|</span>
       <button class="sim-btn" id="btn-toggle-shell">📱 Toàn màn hình</button>
     </header>
 
     <!-- Mobile Device Shell Frame (iPhone 16 Pro styling) -->
-    <main class="phone-shell">
+    <main class="phone-shell" id="phone-shell-container" data-theme="sunset">
       
       <!-- Dynamic Island -->
       <div class="dynamic-island">

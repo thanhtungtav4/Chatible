@@ -64,6 +64,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Theme Palette Switcher Handler
+  const themeNames = {
+    sunset: 'Sunset Coral & Electric Rose',
+    indigo: 'Cyber Indigo & Violet',
+    amber: 'Honey Gold & Amber Luxury',
+    emerald: 'Obsidian Emerald',
+    light: 'Porcelain Clean Light Mode'
+  };
+  document.querySelectorAll('[data-theme-btn]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const theme = btn.dataset.themeBtn;
+      if (phoneShell) phoneShell.dataset.theme = theme;
+      document.querySelectorAll('[data-theme-btn]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      showToast(`Đã chuyển sang bảng màu: ${themeNames[theme] || theme}`);
+    });
+  });
   // Quick State Switcher Buttons (for instant QA & presentation)
   document.querySelectorAll('[data-set-state]').forEach(btn => {
     btn.addEventListener('click', (e) => {
