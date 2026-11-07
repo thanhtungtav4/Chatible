@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Chatible — Mobile Web App Mockup</title>
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Simulator Workspace for Desktop & Mobile Previews -->
+  <div class="simulator-workspace">
+
+    <!-- Top QA & Presentation Bar for Desktop -->
+    <header class="simulator-toolbar">
+      <span class="sim-tag">Mobile Web App Mockup</span>
+      <span style="font-size: 11px; color: var(--text-muted);">| Trạng thái Chat:</span>
+      <button class="sim-btn" data-set-state="IDLE">1. Chuẩn bị (IDLE)</button>
+      <button class="sim-btn" data-set-state="WAITING">2. Tìm (WAITING)</button>
+      <button class="sim-btn" data-set-state="CHATTING">3. Trò chuyện (CHATTING)</button>
+      <button class="sim-btn" data-set-state="RECONNECTING">4. Mất mạng</button>
+      <button class="sim-btn" data-set-state="ENDED">5. Kết thúc</button>
+      <span style="font-size: 11px; color: var(--text-muted);">|</span>
+      <button class="sim-btn" id="btn-toggle-shell">📱 Toàn màn hình</button>
+    </header>
+
+    <!-- Mobile Device Shell Frame (iPhone 16 Pro styling) -->
+    <main class="phone-shell">
+      
+      <!-- Dynamic Island -->
+      <div class="dynamic-island">
+        <div class="camera-lens"></div>
+        <div class="mic-sensor"></div>
+      </div>
+
+      <!-- Native iOS-like Status Bar -->
+      <div class="status-bar">
+        <span>09:41</span>
+        <div class="status-bar-icons">
+          <!-- Signal Icon -->
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor">
+            <rect x="0" y="7.5" width="3" height="3.5" rx="0.5"/>
+            <rect x="4.5" y="5" width="3" height="6" rx="0.5"/>
+            <rect x="9" y="2.5" width="3" height="8.5" rx="0.5"/>
+            <rect x="13.5" y="0" width="3" height="11" rx="0.5"/>
+          </svg>
+          <!-- Wifi Icon -->
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor">
+            <path d="M7.5 3C4.9 3 2.6 4 0.8 5.7L0 4.9C2.1 3 4.7 1.9 7.5 1.9C10.3 1.9 12.9 3 15 4.9L14.2 5.7C12.4 4 10.1 3 7.5 3ZM7.5 6.2C5.8 6.2 4.2 6.8 3 7.9L2.2 7.1C3.7 5.8 5.5 5 7.5 5C9.5 5 11.3 5.8 12.8 7.1L12 7.9C10.8 6.8 9.2 6.2 7.5 6.2ZM7.5 9.4C6.6 9.4 5.8 9.7 5.1 10.3L7.5 12.7L9.9 10.3C9.2 9.7 8.4 9.4 7.5 9.4Z"/>
+          </svg>
+          <!-- Battery Icon -->
+          <svg width="24" height="11" viewBox="0 0 24 11" fill="currentColor">
+            <rect x="0.5" y="0.5" width="20" height="10" rx="3" stroke="currentColor" fill="none"/>
+            <rect x="2" y="2" width="15" height="7" rx="1.5" fill="currentColor"/>
+            <path d="M22 4C22.6 4.3 23 4.9 23 5.5C23 6.1 22.6 6.7 22 7V4Z" fill="currentColor"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- App Viewport Container -->
+      <div class="app-viewport">
+
+        <!-- ================================================================
+             SCREEN 1: S07 - KHUNG CHAT NGẪU NHIÊN CHÍNH (Single Dynamic Container)
+             ================================================================ -->
+        <section class="screen-view active" id="screen-chat">
+          
+          <div class="chat-container">
+
+            <!-- 1.1 SUB-VIEW: IDLE STATE (Chuẩn bị & Lựa chọn bộ lọc) -->
+            <div class="state-idle-content" id="chat-state-idle">
+              <div class="brand-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <span>Chatible 1–1 Web App</span>
+              </div>
+              <h1 class="idle-hero-title">Trò chuyện với<br/>người lạ ngẫu nhiên</h1>
+              <p class="idle-hero-desc">Kết nối ẩn danh an toàn, ưu tiên điện thoại, bảo mật tuyệt đối 18+.</p>
+
+              <!-- Preference: Target Gender -->
+              <div class="pref-box">
+                <div class="pref-label">
+                  <span>Ưu tiên tìm bạn</span>
+                  <span style="color: var(--accent);">Lọc 2 chiều</span>
+                </div>
+                <div class="chips-row">
+                  <button class="chip-btn pref-chip" data-gender="FEMALE">Nữ</button>
+                  <button class="chip-btn pref-chip" data-gender="MALE">Nam</button>
+                  <button class="chip-btn pref-chip" data-gender="OTHER">Khác</button>
+                  <button class="chip-btn pref-chip active" data-gender="ALL">Tất cả</button>
+                </div>
+              </div>
+
+              <!-- Preference: Age Range -->
+              <div class="pref-box">
+                <div class="pref-label">
+                  <span>Khoảng tuổi mong muốn</span>
+                  <span id="pref-age-display" style="color: var(--accent);">18 - 30 tuổi</span>
+                </div>
+                <div class="range-slider-wrapper">
+                  <input type="range" min="18" max="50" value="30" class="range-input" id="pref-age-range">
+                  <div class="range-labels" style="margin-top: 8px;">
+                    <span style="font-size: 11px; color: var(--text-muted);">Tối thiểu 18 tuổi</span>
+                    <span style="font-size: 11px; color: var(--text-muted);">Mặc định 18–35</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Big Primary Start Button -->
+              <button class="btn-primary-big" id="btn-start-matching">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>Bắt đầu tìm bạn mới</span>
+              </button>
+            </div>
+
+            <!-- 1.2 SUB-VIEW: WAITING STATE (Hàng chờ tìm bạn & Gợi ý mở rộng) -->
+            <div class="state-waiting-content" id="chat-state-waiting" style="display: none;">
+              <div class="radar-spinner">
+                <div class="radar-pulse"></div>
+                <div class="radar-pulse delay"></div>
+                <div class="radar-circle"></div>
+                <div class="radar-center-icon">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </div>
+              </div>
+              <h2 class="waiting-title">Đang tìm bạn phù hợp...</h2>
+              <div class="waiting-timer" id="waiting-timer-display">00:00</div>
+
+              <!-- Suggestion Card for Expansion (PRO-02) -->
+              <div class="expansion-card" id="expansion-suggestion-card" style="display: none;">
+                <h4>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Gợi ý mở rộng bộ lọc
+                </h4>
+                <p>Hiện tại ít ứng viên thỏa cả giới tính và tuổi. Bạn có muốn mở rộng phạm vi tìm kiếm để ghép đôi nhanh hơn?</p>
+                <div class="expansion-actions">
+                  <button class="btn-sm-accent" id="btn-accept-expansion">Đồng ý mở rộng</button>
+                  <button class="btn-sm-ghost" onclick="document.getElementById('expansion-suggestion-card').style.display='none'">Tiếp tục chờ</button>
+                </div>
+              </div>
+
+              <button class="btn-secondary" id="btn-cancel-waiting">Hủy tìm kiếm</button>
+            </div>
+
+            <!-- 1.3 SUB-VIEW: CHATTING STATE (Trò chuyện trực tiếp 1–1) -->
+            <div class="chat-container" id="chat-state-chatting" style="display: none;">
+              
+              <!-- Partner Top Bar -->
+              <div class="chat-partner-bar">
+                <div class="partner-info">
+                  <div class="partner-avatar">
+                    <span id="partner-avatar-initial">T</span>
+                    <span class="online-dot"></span>
+                  </div>
+                  <div>
+                    <div class="partner-name-row">
+                      <span class="partner-name" id="partner-display-name">Minh Thư</span>
+                      <span class="partner-badge" id="partner-display-badge">Nữ • 21 tuổi</span>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Phiên ngẫu nhiên #4920</div>
+                  </div>
+                </div>
+
+                <div class="partner-actions">
+                  <!-- Media Consent Chip Button -->
+                  <button class="media-consent-chip" id="consent-media-toggle-chip">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <span class="consent-label">Media: Tắt</span>
+                  </button>
+
+                  <!-- Safety Menu Button (S08) -->
+                  <button class="icon-btn danger-text" id="btn-open-safety-sheet" title="Menu An toàn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  </button>
+
+                  <!-- Next Partner Button -->
+                  <button class="icon-btn" id="btn-next-partner" title="Chuyển người khác">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+
+                  <!-- End Chat Button -->
+                  <button class="icon-btn" id="btn-end-chat" title="Kết thúc cuộc chat">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Reconnection Warning Banner (END-06) -->
+              <div class="reconnecting-bar" id="reconnecting-banner" style="display: none;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="radar-pulse" style="width: 8px; height: 8px; background: var(--warning); border-radius: 50%;"></span>
+                  <span>Mất mạng. Đang chờ kết nối lại trong <strong id="reconnect-timer-sec">30s</strong>...</span>
+                </div>
+                <button onclick="setChatState('CHATTING');" style="font-size: 11px; text-decoration: underline; font-weight: 700;">Khôi phục</button>
+              </div>
+
+              <!-- Messages Stream Scroll Area -->
+              <div class="messages-stream" id="random-messages-stream">
+                <!-- Dynamically populated via app.js -->
+              </div>
+
+              <!-- ENDED Action Banner (Appears when chat ends) -->
+              <div class="ended-bar" id="ended-action-bar" style="display: none;">
+                <p class="ended-msg">Cuộc trò chuyện đã kết thúc. Bạn có thể gửi lời mời kết bạn hoặc tìm người mới.</p>
+                <div class="ended-buttons">
+                  <button class="btn-end-action btn-next" id="btn-ended-find-new">Tìm người mới</button>
+                  <button class="btn-end-action btn-addfriend" id="btn-send-friend-request">Kết bạn</button>
+                  <button class="btn-end-action" onclick="openSheet(document.getElementById('sheet-report-form'))" style="background: var(--surface-hover); color: var(--danger);">Báo cáo</button>
+                </div>
+              </div>
+
+              <!-- Chat Input Bar Fixed at Bottom -->
+              <div class="chat-input-bar" id="chat-input-bar">
+                <div class="input-actions-left">
+                  <!-- Media Upload Button (S16) -->
+                  <button class="icon-btn" id="btn-open-media-sheet" title="Gửi ảnh/video">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  </button>
+                  <!-- Audio Recording Simulator Button -->
+                  <button class="icon-btn" id="btn-record-audio" title="Ghi âm">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                  </button>
+                </div>
+
+                <!-- Input Text Field -->
+                <div class="input-text-wrapper">
+                  <input type="text" class="chat-input-field" id="chat-input-text" placeholder="Nhập tin nhắn..." autocomplete="off">
+                </div>
+
+                <!-- Send Button -->
+                <button class="btn-send" id="btn-send-message">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        <!-- ================================================================
+             SCREEN 2: S12 & S14 - BẠN BÈ & CHAT BẠN BÈ (Hỗ trợ nhắn offline)
+             ================================================================ -->
+        <section class="screen-view" id="screen-friends">
+          <header class="app-header">
+            <div class="header-title-box">
+              <span class="header-title">Bạn bè & Hộp thư</span>
+            </div>
+            <div class="header-actions">
+              <button class="icon-btn" title="Tìm kiếm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <div style="padding: 10px 16px; background: var(--surface-card); border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            <span>Nhắn tin bạn bè hỗ trợ khi offline • Từng tin tự xóa sau 30 ngày</span>
+          </div>
+
+          <!-- Friends List -->
+          <div class="friend-list">
+            <div class="friend-item-card" onclick="alert('Mở luồng chat bạn bè với Hải Yến. Cho phép gửi tin khi offline!')">
+              <div class="friend-left">
+                <div class="partner-avatar">
+                  <span>Y</span>
+                  <span class="online-dot"></span>
+                </div>
+                <div class="friend-meta">
+                  <h4>Hải Yến <span style="font-size: 11px; font-weight: 500; color: var(--text-muted);">(Nữ, 21t)</span></h4>
+                  <p>Hẹn mai cafe nhé!</p>
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">10:24</div>
+                <span class="nav-badge" style="position: static; display: inline-flex;">2</span>
+              </div>
+            </div>
+
+            <div class="friend-item-card" onclick="alert('Mở luồng chat bạn bè với Tuấn Kiệt (đang offline). Tin nhắn sẽ gửi vào hàng đợi!')">
+              <div class="friend-left">
+                <div class="partner-avatar" style="background: #334155;">
+                  <span>K</span>
+                </div>
+                <div class="friend-meta">
+                  <h4>Tuấn Kiệt <span class="offline-badge">Offline</span></h4>
+                  <p>Oke bạn ơi, nhận được ảnh rồi</p>
+                </div>
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted);">Hôm qua</div>
+            </div>
+
+            <div class="friend-item-card">
+              <div class="friend-left">
+                <div class="partner-avatar" style="background: #334155;">
+                  <span>M</span>
+                </div>
+                <div class="friend-meta">
+                  <h4>Mai Linh <span class="offline-badge">Offline</span></h4>
+                  <p>Tin nhắn gửi khi offline sẽ tự động đồng bộ</p>
+                </div>
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted);">02/11</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             SCREEN 3: S15 - PHIÊN GẦN ĐÂY (Lưu 7 ngày xem lại & Báo cáo)
+             ================================================================ -->
+        <section class="screen-view" id="screen-recent">
+          <header class="app-header">
+            <div class="header-title-box">
+              <span class="header-title">Phiên gần đây</span>
+            </div>
+            <span style="font-size: 11px; color: var(--warning); background: var(--warning-soft); padding: 3px 8px; border-radius: var(--radius-full); font-weight: 600;">Lưu giữ 7 ngày</span>
+          </header>
+
+          <div style="padding: 12px 16px; font-size: 12.5px; color: var(--text-secondary); border-bottom: 1px solid var(--border-subtle);">
+            Các phiên chat ngẫu nhiên đã kết thúc được giữ trong 7 ngày để bạn xem lại, chặn hoặc báo cáo đối tác vi phạm.
+          </div>
+
+          <div class="recent-sessions-list">
+            <div class="recent-card">
+              <div class="recent-header">
+                <div>
+                  <h4 style="font-size: 14.5px; font-weight: 700;">Phiên #RC-9941 • Bảo Ngọc (Nữ, 20t)</h4>
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Kết thúc 2 giờ trước • 18 tin nhắn</div>
+                </div>
+                <span class="recent-expiry">Còn 6 ngày 22 giờ</span>
+              </div>
+              <div style="display: flex; gap: 8px; margin-top: 6px;">
+                <button class="btn-sm-ghost" style="flex: 1;" onclick="alert('Đang mở lại bản ghi chat đã mã hóa của Phiên #RC-9941...')">Xem lại tin</button>
+                <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
+              </div>
+            </div>
+
+            <div class="recent-card">
+              <div class="recent-header">
+                <div>
+                  <h4 style="font-size: 14.5px; font-weight: 700;">Phiên #RC-9830 • Quang Huy (Nam, 24t)</h4>
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Kết thúc 1 ngày trước • 42 tin nhắn</div>
+                </div>
+                <span class="recent-expiry">Còn 5 ngày 14 giờ</span>
+              </div>
+              <div style="display: flex; gap: 8px; margin-top: 6px;">
+                <button class="btn-sm-ghost" style="flex: 1;">Xem lại tin</button>
+                <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
+              </div>
+            </div>
+
+            <div class="recent-card">
+              <div class="recent-header">
+                <div>
+                  <h4 style="font-size: 14.5px; font-weight: 700;">Phiên #RC-9712 • Thanh Hằng (Nữ, 22t)</h4>
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Kết thúc 3 ngày trước • 7 tin nhắn</div>
+                </div>
+                <span class="recent-expiry">Còn 3 ngày 08 giờ</span>
+              </div>
+              <div style="display: flex; gap: 8px; margin-top: 6px;">
+                <button class="btn-sm-ghost" style="flex: 1;">Xem lại tin</button>
+                <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             SCREEN 4: S09 & S10 - HỒ SƠ & CÀI ĐẶT AN TOÀN
+             ================================================================ -->
+        <section class="screen-view" id="screen-profile">
+          <header class="app-header">
+            <span class="header-title">Hồ sơ & Cài đặt</span>
+          </header>
+
+          <div style="flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 16px;">
+            <!-- Profile Identity Card -->
+            <div class="pref-box">
+              <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 14px;">
+                <div class="partner-avatar" style="width: 52px; height: 52px; font-size: 20px; background: linear-gradient(135deg, #10b981, #047857);">
+                  <span>L</span>
+                </div>
+                <div>
+                  <h3 style="font-size: 17px; font-weight: 700;">Hoàng Long</h3>
+                  <div style="font-size: 12.5px; color: var(--text-secondary);">Nam • 22 tuổi (Tự khai)</div>
+                  <span style="font-size: 10.5px; color: var(--accent); background: var(--accent-soft); padding: 2px 6px; border-radius: var(--radius-xs);">Đã xác minh tuổi 18+</span>
+                </div>
+              </div>
+
+              <div style="background: var(--surface-base); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; color: var(--text-secondary); border: 1px solid var(--border-subtle);">
+                🔒 <strong>Ngày sinh riêng tư:</strong> 15/03/2004 (Được bảo vệ phía máy chủ, đối phương chỉ thấy số tuổi).
+              </div>
+            </div>
+
+            <!-- Settings Menu -->
+            <div class="pref-box" style="padding: 10px 14px;">
+              <div class="sheet-menu-item" style="border: none; padding: 12px 0;">
+                <span class="menu-item-title">Danh sách chặn (5 người)</span>
+                <span style="font-size: 12px; color: var(--text-muted);">Quản lý ›</span>
+              </div>
+              <div class="sheet-menu-item" style="border: none; border-top: 1px solid var(--border-subtle); padding: 12px 0;">
+                <span class="menu-item-title">Mô phỏng Màn hình S10: Hạn chế & Khiếu nại</span>
+                <button class="btn-sm-ghost" onclick="alert('Màn hình S10: Thông báo tài khoản bị hạn chế và quyền gửi giải trình khiếu nại trong 7 ngày.')">Mở xem</button>
+              </div>
+              <div class="sheet-menu-item" style="border: none; border-top: 1px solid var(--border-subtle); padding: 12px 0;">
+                <span class="menu-item-title">Chính sách riêng tư & Quản trị</span>
+                <span style="font-size: 12px; color: var(--text-muted);">Chi tiết ›</span>
+              </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="pref-box" style="border-color: rgba(239, 68, 68, 0.2);">
+              <button style="width: 100%; color: var(--danger); font-size: 14px; font-weight: 700; text-align: center;" onclick="alert('Đăng xuất tài khoản an toàn.')">
+                Đăng xuất
+              </button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Native Bottom Navigation Bar -->
+      <nav class="bottom-nav">
+        <button class="nav-item active" data-screen="screen-chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          <span>Chat lạ</span>
+        </button>
+        <button class="nav-item" data-screen="screen-friends">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Bạn bè</span>
+          <span class="nav-badge">2</span>
+        </button>
+        <button class="nav-item" data-screen="screen-recent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>Gần đây</span>
+        </button>
+        <button class="nav-item" data-screen="screen-profile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span>Hồ sơ</span>
+        </button>
+      </nav>
+      <div class="home-indicator"></div>
+
+    </main>
+
+  </div>
+
+  <!-- ====================================================================
+       BOTTOM SHEET 1: S08 - MENU AN TOÀN & XỬ LÝ KHẨN CẤP
+       ==================================================================== -->
+  <div class="bottom-sheet-backdrop" id="sheet-safety-menu">
+    <div class="bottom-sheet-content">
+      <div class="sheet-drag-handle"></div>
+      <h3 class="sheet-title">Menu An toàn & Bảo vệ</h3>
+      <p class="sheet-desc">Các hành động xử lý an toàn có hiệu lực ngay lập tức phía máy chủ.</p>
+
+      <div class="sheet-menu-list">
+        <button class="sheet-menu-item" id="btn-action-instant-block">
+          <div class="menu-item-left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            <div>
+              <div class="menu-item-title danger-text">Dừng nhận tin ngay & Chặn</div>
+              <div class="menu-item-sub">Ngắt kết nối lập tức, chặn ghép 2 chiều phía máy chủ</div>
+            </div>
+          </div>
+          <span>›</span>
+        </button>
+
+        <button class="sheet-menu-item" id="btn-action-open-report">
+          <div class="menu-item-left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div>
+              <div class="menu-item-title">Báo cáo vi phạm & Đóng băng bằng chứng</div>
+              <div class="menu-item-sub">Chọn tin nhắn/media làm bằng chứng gửi điều hành viên</div>
+            </div>
+          </div>
+          <span>›</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       BOTTOM SHEET 2: S08 - BIỂU MẪU BÁO CÁO VI PHẠM (REPORT FORM)
+       ==================================================================== -->
+  <div class="bottom-sheet-backdrop" id="sheet-report-form">
+    <div class="bottom-sheet-content">
+      <div class="sheet-drag-handle"></div>
+      <h3 class="sheet-title">Báo cáo vi phạm</h3>
+      <p class="sheet-desc">Bằng chứng sẽ được đóng băng và lưu trữ an toàn trong 90 ngày sau khi hồ sơ đóng.</p>
+
+      <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+        <label style="font-size: 13px; font-weight: 700; color: var(--text-secondary);">Chọn lý do chính:</label>
+        <select style="width: 100%; padding: 12px; background: var(--surface-card); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 14px;">
+          <option>🔞 Nghi ngờ có người chưa đủ 18 tuổi (Ưu tiên cao)</option>
+          <option>🚫 Nội dung tình dục không đồng thuận / Quay lén (Ưu tiên cao)</option>
+          <option>⚠️ Đe dọa / Tống tiền / Tiết lộ thông tin (Ưu tiên cao)</option>
+          <option>🤬 Quấy rối / Xúc phạm thô tục</option>
+          <option>📢 Spam / Lừa đảo quảng cáo</option>
+          <option>Khác</option>
+        </select>
+
+        <label style="font-size: 13px; font-weight: 700; color: var(--text-secondary); margin-top: 8px;">Mô tả thêm (Tùy chọn):</label>
+        <textarea style="width: 100%; height: 70px; padding: 10px; background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13.5px; resize: none;" placeholder="Cung cấp thêm ngữ cảnh cho điều hành viên..."></textarea>
+      </div>
+
+      <button class="btn-primary-big" id="btn-submit-report" style="background: var(--danger); box-shadow: 0 8px 20px rgba(239, 68, 68, 0.4);">
+        Gửi báo cáo & Chặn đối tác
+      </button>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       BOTTOM SHEET 3: S16 - GỬI MEDIA MÃ HÓA & NÚT NỘI DUNG NGƯỜI LỚN
+       ==================================================================== -->
+  <div class="bottom-sheet-backdrop" id="sheet-media-upload">
+    <div class="bottom-sheet-content">
+      <div class="sheet-drag-handle"></div>
+      <h3 class="sheet-title">Gửi ảnh / Video clip</h3>
+      <p class="sheet-desc">Giới hạn máy chủ: Ảnh &lt; 30 MB, Video clip &lt; 100 MB. Toàn bộ tệp được mã hóa Envelope qua KMS.</p>
+
+      <div style="background: var(--surface-card); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+        <!-- Adult Content Switch (ADULT-03) -->
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-size: 14.5px; font-weight: 700; color: var(--text-primary);">Nút "Nội dung người lớn"</div>
+            <div style="font-size: 12px; color: var(--text-secondary);">Gắn nhãn 18+ và kích hoạt đóng Watermark động</div>
+          </div>
+          <div class="switch-box adult" id="switch-adult-content">
+            <div class="switch-thumb"></div>
+          </div>
+        </div>
+
+        <!-- 18+ Warning & Legal Acknowledgement (ADULT-04 & ADULT-11) -->
+        <div id="adult-consent-notice" style="display: none; margin-top: 14px; padding: 10px; background: var(--accent-adult-soft); border-radius: var(--radius-sm); border: 1px solid rgba(244, 63, 94, 0.3);">
+          <div style="font-size: 12px; color: #fff; font-weight: 700; margin-bottom: 4px;">🔞 Cam kết người gửi & Cảnh báo an toàn:</div>
+          <p style="font-size: 11.5px; color: rgba(255, 255, 255, 0.85); line-height: 1.4;">
+            1. Bạn cam kết tất cả người xuất hiện trong ảnh/video đều từ 18 tuổi trở lên và có sự đồng thuận.<br/>
+            2. Web áp dụng Watermark truy vết và token mờ hạn 5 phút, nhưng không thể ngăn chặn tuyệt đối việc quay/chụp màn hình bằng thiết bị ngoài.<br/>
+            3. Bạn có quyền thu hồi quyền xem bất kỳ lúc nào sau khi gửi.
+          </p>
+        </div>
+      </div>
+
+      <button class="btn-primary-big" id="btn-confirm-send-media">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <span>Xác nhận gửi an toàn</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- App Floating Toast -->
+  <div class="toast-notice" id="app-toast">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    <span class="toast-text">Thông báo hệ thống</span>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
