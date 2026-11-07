@@ -64,24 +64,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Theme Palette Switcher Handler
-  const themeNames = {
-    sunset: 'Sunset Coral & Electric Rose',
-    indigo: 'Cyber Indigo & Violet',
-    amber: 'Honey Gold & Amber Luxury',
-    emerald: 'Obsidian Emerald',
-    light: 'Porcelain Clean Light Mode'
-  };
-  document.querySelectorAll('[data-theme-btn]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const theme = btn.dataset.themeBtn;
-      if (phoneShell) phoneShell.dataset.theme = theme;
-      document.querySelectorAll('[data-theme-btn]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      showToast(`Đã chuyển sang bảng màu: ${themeNames[theme] || theme}`);
+  // Theme Mode Switcher (Chatx Light <-> Chatx Dark)
+  const btnToggleThemeMode = document.getElementById('btn-toggle-theme-mode');
+  if (btnToggleThemeMode) {
+    btnToggleThemeMode.addEventListener('click', () => {
+      const isDark = phoneShell.dataset.theme === 'dark';
+      const newTheme = isDark ? 'light' : 'dark';
+      phoneShell.dataset.theme = newTheme;
+      btnToggleThemeMode.textContent = isDark ? '🌙 Chế độ Tối' : '☀️ Sáng (Figma)';
+      document.querySelector('.simulator-workspace').classList.toggle('dark-bg', !isDark);
+      showToast(isDark ? '☀️ Đã đổi sang Chatx Sáng (Chuẩn Figma)' : '🌙 Đã đổi sang Chatx Tối (Web3 Privacy Dark)');
     });
-  });
+  }
   // Quick State Switcher Buttons (for instant QA & presentation)
   document.querySelectorAll('[data-set-state]').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -132,10 +126,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (v) v.style.display = 'none';
     });
 
-    // Reset banners
+    // Reset banners & header visibility
     const reconnectBar = document.getElementById('reconnecting-banner');
     const endedBar = document.getElementById('ended-action-bar');
     const chatInputBar = document.getElementById('chat-input-bar');
+    const globalHeader = document.getElementById('chat-global-header');
+    const segmentedBar = document.getElementById('chat-segmented-bar');
 
     if (reconnectBar) reconnectBar.style.display = 'none';
     if (endedBar) endedBar.style.display = 'none';
@@ -144,6 +140,9 @@ document.addEventListener('DOMContentLoaded', () => {
       chatInputBar.querySelector('.chat-input-field').disabled = false;
     }
 
+    const isInConversation = (newState === 'CHATTING' || newState === 'RECONNECTING' || newState === 'ENDED');
+    if (globalHeader) globalHeader.style.display = isInConversation ? 'none' : 'flex';
+    if (segmentedBar) segmentedBar.style.display = isInConversation ? 'none' : 'flex';
     switch (newState) {
       case 'IDLE':
         if (chatStateViews.IDLE) chatStateViews.IDLE.style.display = 'flex';

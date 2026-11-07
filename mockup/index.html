@@ -16,14 +16,8 @@
 
     <!-- Top QA & Presentation Bar for Desktop -->
     <header class="simulator-toolbar">
-      <span class="sim-tag">Mobile App Mockup</span>
-      <div class="theme-picker-group" title="Đổi bảng phối màu">
-        <button class="theme-pill-btn active" data-theme-btn="sunset" style="background: #ff4d6d;" title="1. Sunset Coral & Electric Rose"></button>
-        <button class="theme-pill-btn" data-theme-btn="indigo" style="background: #6366f1;" title="2. Cyber Indigo & Violet"></button>
-        <button class="theme-pill-btn" data-theme-btn="amber" style="background: #f59e0b;" title="3. Honey Gold & Amber"></button>
-        <button class="theme-pill-btn" data-theme-btn="emerald" style="background: #10b981;" title="4. Obsidian Emerald"></button>
-        <button class="theme-pill-btn" data-theme-btn="light" style="background: #ffffff; border-color: #cbd5e1;" title="5. Porcelain Light Mode"></button>
-      </div>
+      <span class="sim-tag">Figma: Chatx Web3</span>
+      <button class="theme-mode-btn" id="btn-toggle-theme-mode">🌙 Chế độ Tối</button>
       <span style="font-size: 11px; color: var(--text-muted);">| Trạng thái:</span>
       <button class="sim-btn" data-set-state="IDLE">Chuẩn bị</button>
       <button class="sim-btn" data-set-state="WAITING">Đang tìm</button>
@@ -35,7 +29,7 @@
     </header>
 
     <!-- Mobile Device Shell Frame (iPhone 16 Pro styling) -->
-    <main class="phone-shell" id="phone-shell-container" data-theme="sunset">
+    <main class="phone-shell" id="phone-shell-container">
       
       <!-- Dynamic Island -->
       <div class="dynamic-island">
@@ -77,14 +71,43 @@
           
           <div class="chat-container">
 
-            <!-- 1.1 SUB-VIEW: IDLE STATE (Chuẩn bị & Lựa chọn bộ lọc) -->
-            <div class="state-idle-content" id="chat-state-idle">
-              <div class="brand-badge">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                <span>Chatible 1–1 Web App</span>
+            <!-- Chatx Brand Header (Figma Style) -->
+            <header class="app-header" id="chat-global-header">
+              <div class="chatx-brand">
+                <div class="chatx-logo-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                </div>
+                <span class="chatx-brand-name">Chat<span>x</span></span>
               </div>
-              <h1 class="idle-hero-title">Trò chuyện với<br/>người lạ ngẫu nhiên</h1>
-              <p class="idle-hero-desc">Kết nối ẩn danh an toàn, ưu tiên điện thoại, bảo mật tuyệt đối 18+.</p>
+              <div style="display: flex; gap: 8px;">
+                <button class="icon-btn" onclick="alert('Đang bật tìm kiếm hồ sơ và tin nhắn')">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </button>
+              </div>
+            </header>
+
+            <!-- Chatx Segmented Control Pills (Figma Frame 5 & 6) -->
+            <div class="segmented-pills-bar" id="chat-segmented-bar">
+              <div class="segmented-pill-container">
+                <button class="seg-pill-btn active" id="seg-btn-random">Chat ngẫu nhiên</button>
+                <button class="seg-pill-btn" id="seg-btn-friends" onclick="document.querySelector('[data-screen=\'screen-friends\']').click()">Bạn bè (2)</button>
+              </div>
+            </div>
+
+            <!-- 1.1 SUB-VIEW: IDLE STATE (Chatx Onboarding Style Figma Frame 1) -->
+            <div class="state-idle-content" id="chat-state-idle">
+              
+              <!-- Chatx Floating Avatar Cloud Cluster -->
+              <div class="chatx-avatar-cloud">
+                <div class="cloud-avatar av1"><img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
+                <div class="cloud-avatar av2"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
+                <div class="cloud-avatar av3"><img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
+                <div class="cloud-avatar av4"><img src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
+                <div class="cloud-avatar av5"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
+              </div>
+
+              <h1 class="idle-hero-title">Kết nối với<br/><span>Sự Ẩn Danh</span></h1>
+              <p class="idle-hero-desc">Bảo mật quyền riêng tư tối đa, ưu tiên mobile web-app, hoàn toàn bảo vệ 18+.</p>
 
               <!-- Preference: Target Gender -->
               <div class="pref-box">
@@ -115,10 +138,10 @@
                 </div>
               </div>
 
-              <!-- Big Primary Start Button -->
+              <!-- Chatx Big Royal Blue Button -->
               <button class="btn-primary-big" id="btn-start-matching">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 <span>Bắt đầu tìm bạn mới</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
 
