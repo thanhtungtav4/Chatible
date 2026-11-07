@@ -1,0 +1,349 @@
+ĐẶC TẢ NGHIỆP VỤ WEB CHAT NGẪU NHIÊN — BẢN 1.0
+Ngày: 07/11/2026
+Ngôn ngữ giao diện: Tiếng Việt. Thiết kế ưu tiên điện thoại.
+Đối tượng đọc: Chủ sản phẩm, GPT local, lập trình viên, thiết kế và kiểm thử.
+
+0. CHỈ DẪN CHO GPT LOCAL
+
+Bạn là người phân tích và triển khai một web chat ngẫu nhiên 1–1.
+Đọc toàn bộ tài liệu trước khi thiết kế hoặc viết mã. Đây là đặc tả sản phẩm của dự án này, KHÔNG phải mô tả chính xác website Chatible. Chatible chỉ là tham chiếu trải nghiệm chat đơn giản; chưa có ảnh hoặc link phiên bản cụ thể để kiểm tra trực tiếp.
+
+Phân biệt hai cấp:
+- [CHỐT]: yêu cầu người dùng đã nêu.
+- [ĐỀ XUẤT]: mặc định thiết kế để có một đặc tả nhất quán; chưa được chủ sản phẩm xác nhận.
+Không biến đề xuất thành yêu cầu đã chốt. Không tự thêm kết bạn, thanh toán, ảnh, video hoặc AI giả làm người thật.
+Được làm mô hình/prototype theo đề xuất nhưng phải ghi rõ giả định. Trước triển khai chính thức, xác nhận các quyết định ở mục 18. Không tự quyết các chính sách tuổi và lưu dữ liệu nếu chưa có phê duyệt của chủ sản phẩm.
+
+Khi nhận tài liệu, hãy trả lại: (1) tóm tắt yêu cầu và giả định; (2) sơ đồ nghiệp vụ; (3) danh sách màn hình; (4) mô hình dữ liệu; (5) kế hoạch thực hiện theo giai đoạn; (6) các điểm còn mâu thuẫn hoặc thiếu. Không chỉ tạo giao diện giả rồi coi là đã hoàn thành hệ thống chat.
+
+1. MỤC TIÊU VÀ PHẠM VI
+
+[CHỐT] Web trước, ưu tiên giao diện mobile; có tạo tài khoản và đăng nhập; chọn giới tính khi khởi tạo; chọn giới tính ưu tiên tìm bạn; chat ngẫu nhiên với người lạ; chặn và xử lý người quấy rối.
+[CHỐT] Hướng tương lai có thể mở rộng app và Telegram, chưa triển khai ở bản đầu.
+[ĐỀ XUẤT] Bắt buộc đăng nhập trước khi tìm bạn. Không có chat khách ở MVP.
+[ĐỀ XUẤT] Chat chữ và emoji, 1–1, không kết bạn, không hộp thư dài hạn, không ảnh/file/ghi âm/gọi.
+[ĐỀ XUẤT] Giữ trải nghiệm trên một màn hình chat, thay đổi trạng thái thay vì chuyển nhiều trang.
+
+2. VAI TRÒ VÀ QUYỀN
+
+Khách chưa đăng nhập: xem giới thiệu, quy tắc, đăng ký, đăng nhập, quên mật khẩu; không tìm bạn hoặc xem nội dung chat.
+Thành viên: hoàn tất hồ sơ, tìm bạn, nhắn tin trong phiên mình tham gia, kết thúc, chuyển người, chặn, báo cáo, quản lý hồ sơ và tài khoản.
+Điều hành viên: xử lý báo cáo được phân quyền, xem bằng chứng liên quan, cảnh cáo hoặc hạn chế theo quyền; không mặc định được đọc mọi cuộc chat.
+Quản trị viên: quản lý phân quyền, cấu hình, xử lý tài khoản, xem nhật ký nghiệp vụ. Không được biết mật khẩu người dùng.
+Tài khoản bị hạn chế: được đăng nhập để xem thông báo, quản lý bảo mật và khiếu nại nếu có; quyền tìm/nhắn tùy loại hạn chế.
+
+3. SƠ ĐỒ TỔNG THỂ (MERMAID)
+
+```mermaid
+flowchart TD
+    A["Mở website"] --> B{"Đã đăng nhập?"}
+    B -->|Chưa| C["Đăng ký hoặc đăng nhập"]
+    C --> D{"Tài khoản đủ điều kiện?"}
+    B -->|Rồi| D
+    D -->|Chưa xác minh| E["Xác minh tài khoản"]
+    E --> D
+    D -->|Bị hạn chế| F["Thông báo và hướng xử lý"]
+    D -->|Đủ điều kiện| G{"Hồ sơ hoàn tất?"}
+    G -->|Chưa| H["Giới tính, biệt danh và ưu tiên"]
+    H --> I["Sẵn sàng tìm bạn"]
+    G -->|Rồi| I
+    I --> J["Tìm bạn"]
+    J --> K["Trò chuyện"]
+    K --> L["Kết thúc hoặc chặn"]
+    L --> I
+```
+
+4. ĐĂNG KÝ, XÁC MINH VÀ ĐĂNG NHẬP
+
+[ĐỀ XUẤT] Phương thức ban đầu: email + mật khẩu; email phải xác minh trước khi tìm bạn. Đăng nhập Google/Telegram để sau. Email không hiển thị cho đối phương.
+
+AUTH-01 Đăng ký: nhập email, mật khẩu, nhập lại mật khẩu, xác nhận điều kiện tuổi theo chính sách và đồng ý điều khoản/quy tắc/riêng tư. Chính sách mật khẩu là cấu hình cần chốt; không tự đặt tiêu chuẩn không có trong tài liệu.
+AUTH-02 Email hợp lệ, mật khẩu khớp, gửi yêu cầu một lần. Chống bấm gửi nhiều lần; không tạo nhiều tài khoản cho cùng định danh email theo quy tắc chuẩn hóa đã thống nhất. Không tự bỏ dấu chấm hoặc dấu cộng vì có thể nhập nhầm hai địa chỉ khác nhau thành một.
+AUTH-03 Tạo tài khoản PENDING_VERIFICATION, gửi hướng dẫn xác minh. Chỉ báo đã gửi sau khi dịch vụ gửi chấp nhận; nếu lỗi có nút thử lại, không tạo lại tài khoản.
+AUTH-04 Liên kết/mã xác minh có thời hạn, một lần sử dụng; xác minh thành công chuyển sang trạng thái chưa hoàn tất hồ sơ. Mã sai/hết hạn/đã dùng phải có thông báo và đường quay lại phù hợp.
+AUTH-05 Gửi lại mã có thời gian chờ và giới hạn. Không xóa tài khoản chỉ vì gửi mã thất bại. Dùng thông báo không tiết lộ email có tồn tại hay không ở các luồng công khai nhạy cảm.
+AUTH-06 Đăng nhập sai dùng thông báo chung. Giới hạn thử sai; không để kẻ khác khóa vĩnh viễn tài khoản chỉ bằng việc nhập sai nhiều lần.
+AUTH-07 Đăng nhập thành công: kiểm tra hạn chế và mức hoàn tất hồ sơ; đưa về đúng màn hình tiếp theo. Phiên đăng nhập hết hạn trong khi chat phải ngừng quyền gửi, xử lý phiên chat rồi yêu cầu đăng nhập lại.
+AUTH-08 Quên mật khẩu: phản hồi chung, mã một lần có thời hạn; gửi lại có giới hạn. Đổi thành công vô hiệu hóa mã cũ và thu hồi phiên đăng nhập theo chính sách, mặc định đề xuất thu hồi các phiên cũ và kết thúc chat liên quan.
+AUTH-09 Đổi mật khẩu khi đã đăng nhập cần chứng minh quyền sở hữu phù hợp. Không ghi mật khẩu/mã xác thực vào nhật ký. Đổi email cần xác minh địa chỉ mới và thông báo địa chỉ cũ; không coi email mới đã hợp lệ trước xác minh.
+AUTH-10 Đăng xuất trong hàng chờ: hủy tìm; trong chat: kết thúc phiên. Đăng xuất thất bại do mạng: thiết bị xóa quyền truy cập cục bộ, máy chủ xử lý kết nối mất và hết hạn; không hứa kết thúc từ xa tức thì nếu chưa xác nhận.
+AUTH-11 Không có dịch vụ email trong môi trường local: ghi rõ chế độ phát triển, không giả giao dịch gửi email thành công ở môi trường thật; không đưa mã xác minh vào giao diện công khai.
+
+5. KHỞI TẠO HỒ SƠ VÀ THIẾT LẬP
+
+[CHỐT] Bắt buộc tự chọn giới tính lần đầu, không đặt sẵn.
+[ĐỀ XUẤT] Lựa chọn giới tính: Nam / Nữ / Khác. Lựa chọn ưu tiên: Nam / Nữ / Khác / Không ưu tiên.
+ONB-01 Lưu hồ sơ phía máy chủ; tải lại/đăng nhập thiết bị khác không bắt chọn lại nếu đã hoàn tất.
+ONB-02 Biệt danh là tên hiển thị, không cần duy nhất; không dùng làm khóa nhận diện hoặc khóa chặn. Giới hạn độ dài và nội dung phải được cấu hình, kiểm tra ở máy chủ.
+ONB-03 Giới tính tự khai, chưa xác minh. [ĐỀ XUẤT] Không hiển thị giới tính đối phương trong MVP, chỉ dùng để ghép; chủ sản phẩm cần xác nhận.
+ONB-04 Hồ sơ thiếu dữ liệu bắt buộc thì không được tìm bạn, kể cả gọi thẳng API.
+ONB-05 Chỉ đổi giới tính khi IDLE và không có yêu cầu ghép đang xử lý; thay đổi có nhật ký và giới hạn tần suất cấu hình. Không đổi giữa phiên để tác động lựa chọn đã ghép.
+ONB-06 Ưu tiên lưu làm mặc định cho lần tìm sau. Khi đang chờ muốn đổi: hủy yêu cầu hiện tại có xác nhận máy chủ rồi tạo mới. Khi đang chat: chỉ áp dụng cho lần sau.
+ONB-07 Nếu có ngày sinh, là dữ liệu riêng tư; không tự thu thập ngày sinh đầy đủ chỉ vì cần xác nhận ngưỡng tuổi. Cách kiểm tra tuổi cần chốt riêng.
+
+6. ĐỊNH NGHĨA GHÉP THEO GIỚI TÍNH
+
+[ĐỀ XUẤT] Ưu tiên là mềm, nhưng chỉ mở rộng sau khi người dùng chủ động chọn. Không tự ghép ngoài phạm vi đã chấp nhận.
+Mỗi yêu cầu tìm có: giới tính bản thân tại lúc tìm, giới tính ưu tiên, tập giới tính được phép ghép, thời điểm vào hàng, trạng thái và mã yêu cầu.
+- Chọn Nữ: tập được phép ban đầu = {Nữ}.
+- Chọn Không ưu tiên: tập được phép = {Nam, Nữ, Khác}.
+- Chọn Mở rộng tìm kiếm: tập được phép cho yêu cầu hiện tại = tất cả; vẫn giữ lựa chọn gốc làm ưu tiên xếp hạng.
+- Mở rộng không tự lưu thành mặc định cho lần sau. Lần tìm tiếp theo quay về ưu tiên đã lưu.
+
+Một cặp A/B hợp lệ khi TẤT CẢ điều kiện đúng:
+1. A khác B, cả hai có tài khoản hợp lệ và được phép chat.
+2. Cả hai đang trong hàng chờ có kết nối còn hiệu lực và chưa bị người khác giữ ghép.
+3. Giới tính A thuộc tập B đã cho phép; giới tính B thuộc tập A đã cho phép.
+4. Không có chặn đang hiệu lực ở bất kỳ chiều nào.
+5. Không vi phạm thời gian tránh ghép lại, điều kiện tuổi hoặc điều kiện nhóm nếu có.
+
+Xếp hạng [ĐỀ XUẤT]: ưu tiên khớp mong muốn hai bên, sau đó thời gian chờ; cần cơ chế chống người chờ bị bỏ đói. Không ưu tiên là trung lập, không phải ưu tiên thấp. Không đảo thứ tự hàng chờ vì thao tác làm mới trang.
+
+Ví dụ:
+- A Nam ưu tiên Nữ; B Nữ ưu tiên Nam: hợp lệ.
+- A Nam ưu tiên Nữ; B Nữ ưu tiên Nữ: không hợp lệ khi chưa mở rộng.
+- A Nam ưu tiên Nữ; B Nữ không ưu tiên: hợp lệ.
+- Chỉ A mở rộng nhưng B vẫn chỉ nhận Nữ: A Nam vẫn không hợp lệ với B.
+- Cả hai mở rộng: có thể ghép nếu các điều kiện còn lại đúng.
+
+7. TÌM NGƯỜI VÀ XÁC NHẬN GHÉP
+
+MATCH-01 Bấm Tìm: kiểm tra tài khoản, hồ sơ, giới hạn, phiên đang chạy. Một người có tối đa một yêu cầu tìm hoạt động.
+MATCH-02 Không có ứng viên: giữ hàng chờ, hiện thời gian chờ thực tế; không giả số người, không dùng bot giả người thật.
+MATCH-03 Sau thời gian cấu hình, có thể gợi ý mở rộng. Từ chối gợi ý vẫn được chờ như cũ.
+MATCH-04 Ghép là thao tác nguyên tử: giữ cả hai, tạo một cuộc chat với đúng hai thành viên, bỏ cả hai khỏi hàng chờ. Kiểm tra lại hạn chế và chặn tại thời điểm hoàn tất.
+MATCH-05 Trong MATCHING, chờ hai thiết bị xác nhận sẵn sàng. Chỉ CHAT khi đủ điều kiện. Nếu thất bại trước khi sẵn sàng, thông báo và đưa người vẫn đang chủ động chờ về hàng chờ, giữ thời gian chờ gốc; không làm vậy nếu họ đã hủy.
+MATCH-06 Hủy tìm đồng thời được ghép: thứ tự máy chủ quyết định. Hủy trước thì không ghép; ghép trước thì thao tác hủy phải kết thúc phiên mới, không để người dùng bị mắc lại.
+MATCH-07 Thay đổi hàng chờ phải có mã yêu cầu và phiên bản; yêu cầu hủy cũ không được hủy lần tìm mới.
+MATCH-08 Không tự ghép lại đối tác vừa rời. [ĐỀ XUẤT] Thời gian tránh ghép lại có cấu hình; nếu không có người khác thì tiếp tục chờ hoặc cho người dùng đồng ý gặp lại, không âm thầm bỏ điều kiện.
+MATCH-09 Nếu mất mạng khi chờ, tạm loại khỏi ứng viên; hết thời hạn thì đóng yêu cầu. Quay lại phải đồng bộ trạng thái, không tạo yêu cầu trùng.
+
+Sơ đồ:
+```mermaid
+flowchart TD
+    A["Bấm tìm"] --> B{"Đủ điều kiện?"}
+    B -->|Không| C["Hiện lý do"]
+    B -->|Có| D["Vào hàng chờ"]
+    D --> E{"Có cặp hợp lệ?"}
+    E -->|Có| F["Giữ hai người và xác nhận kết nối"]
+    F --> G{"Cả hai sẵn sàng?"}
+    G -->|Có| H["Bắt đầu chat"]
+    G -->|Không| I["Hủy ghép và đồng bộ trạng thái"]
+    E -->|Chưa| J{"Người dùng chọn?"}
+    J -->|Tiếp tục| D
+    J -->|Mở rộng| K["Cập nhật phạm vi được phép"]
+    K --> D
+    J -->|Hủy| L["Về trạng thái sẵn sàng"]
+```
+
+8. TRẠNG THÁI: KHÔNG TRỘN TÀI KHOẢN VỚI CUỘC CHAT
+
+Tài khoản: PENDING_VERIFICATION / ONBOARDING / ACTIVE / DELETION_PENDING / DELETED. Hạn chế là bản ghi riêng có loại, thời hạn và lý do; không dùng một cờ ban duy nhất cho mọi tình huống.
+Yêu cầu tìm: QUEUED / RESERVED / MATCHED / CANCELLED / EXPIRED.
+Cuộc chat: CONNECTING / ACTIVE / ENDED; ENDED là trạng thái cuối, không mở lại ở MVP.
+Trạng thái kết nối từng người: CONNECTED / RECONNECTING / DISCONNECTED.
+Giao diện người dùng: IDLE / WAITING / MATCHING / CHATTING / RECONNECTING / ENDED. Trạng thái giao diện được suy ra từ dữ liệu máy chủ, không tự làm nguồn sự thật.
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> WAITING: Tìm
+    WAITING --> IDLE: Hủy
+    WAITING --> MATCHING: Có ứng viên
+    MATCHING --> WAITING: Ghép lỗi và vẫn muốn chờ
+    MATCHING --> IDLE: Hủy
+    MATCHING --> CHATTING: Hai bên sẵn sàng
+    CHATTING --> RECONNECTING: Mất kết nối
+    RECONNECTING --> CHATTING: Kết nối lại khi phiên còn hoạt động
+    RECONNECTING --> ENDED: Hết hạn hoặc đối phương rời
+    CHATTING --> ENDED: Kết thúc, chuyển, chặn hoặc bị dừng
+    ENDED --> WAITING: Tìm người mới
+    ENDED --> IDLE: Dừng
+```
+
+Lưu ý: quyền truy cập bị thu hồi có thể buộc dừng ở mọi trạng thái. Khi chuyển người, phải nhận kết quả kết thúc phiên cũ rồi mới vào WAITING, dù giao diện có thể thể hiện thành một thao tác.
+
+9. TIN NHẮN VÀ CUỘC CHAT
+
+CHAT-01 Tin chữ/emoji; cấm rỗng sau kiểm tra khoảng trắng. Độ dài và tốc độ gửi là cấu hình. Hiển thị nội dung như văn bản, không thực thi HTML/script.
+CHAT-02 Người gửi phải là thành viên, có quyền và phiên ACTIVE. Không chỉ kiểm tra lúc mở kết nối; mỗi yêu cầu gửi đều kiểm tra lại.
+CHAT-03 Mỗi thao tác gửi có client_message_id; lặp lại cùng mã không tạo tin mới. Máy chủ gán message_id, thứ tự và thời điểm. Thứ tự do máy chủ quyết định, không dùng đồng hồ điện thoại.
+CHAT-04 Trạng thái MVP: Đang gửi / Đã được máy chủ nhận / Gửi thất bại. Không hiển thị Đã xem nếu chưa có nghiệp vụ xác nhận xem. Khi chưa rõ kết quả, đối soát mã gửi trước khi tạo lần gửi mới.
+CHAT-05 Sau mất mạng, đồng bộ tin thiếu theo mốc thứ tự. Sự kiện trùng không tạo bong bóng trùng. Sự kiện cũ của phiên trước không thay đổi phiên hiện tại.
+CHAT-06 Đang nhập là tín hiệu tạm, tự hết hạn; không được coi là bằng chứng người còn online. Không lưu thành tin.
+CHAT-07 Khi cuộc chat kết thúc: khóa gửi, giữ nội dung trong màn hình hiện tại trong giới hạn chính sách; hiện Tìm người mới, Chặn, Báo cáo.
+CHAT-08 Khi tìm cuộc chat mới: xóa bản nháp cũ, đổi rõ đối tác và ngữ cảnh. Không tự chuyển bản nháp qua phiên mới.
+CHAT-09 [ĐỀ XUẤT] Link ở dạng văn bản hoặc mở qua xác nhận, không tự tải xem trước từ URL người dùng. Chính sách cho phép link/thông tin liên hệ cần chốt; không tự cấm chia sẻ mọi thông tin.
+CHAT-10 Không sửa/thu hồi tin ở MVP; nếu bổ sung sau phải giữ bằng chứng báo cáo nhất quán và giải thích hành vi xóa hai phía.
+
+10. KẾT THÚC, CHUYỂN NGƯỜI, MẤT KẾT NỐI
+
+END-01 Kết thúc: dừng cho cả hai, không tự tìm tiếp cho bên nào.
+END-02 Chuyển người: dừng phiên cũ, đưa duy nhất người chủ động vào hàng chờ mới theo ưu tiên lưu. Người còn lại tự quyết định tìm tiếp.
+END-03 Hai bên chuyển cùng lúc: kết thúc một lần; mỗi bên có một yêu cầu tìm mới; tránh ghép lại ngay.
+END-04 Tin và kết thúc đến cùng lúc: giao dịch nào máy chủ chấp nhận trước quyết định. Tin đã được nhận trước kết thúc có thể được đồng bộ sau; tin gửi mới sau kết thúc bị từ chối. Không tuyên bố đã xóa tin đã nhận trên thiết bị kia.
+END-05 Bấm Back/đổi trang trong web khi chat: thông báo hậu quả; nếu rời thì kết thúc. Đóng tab đột ngột không bảo đảm nhận sự kiện rời nên cần kiểm tra kết nối.
+END-06 [ĐỀ XUẤT] Chờ kết nối lại 30 giây. Một bên mất mạng, bên còn lại thấy trạng thái và được kết thúc bất kỳ lúc nào. Không tự tìm người khác thay người mất mạng.
+END-07 Tải lại/đổi Wi-Fi/khóa màn hình: kiểm tra phiên hiện tại; nếu còn hoạt động thì khôi phục; nếu đã kết thúc thì hiển thị kết quả, không hồi sinh phiên.
+END-08 Một người chỉ có một thiết bị điều khiển phiên. Tab/thiết bị mới xem thông báo và chọn Tiếp tục ở đây; chuyển quyền vô hiệu hóa quyền điều khiển nơi cũ. Lệnh cũ phải có mã phiên điều khiển để không kết thúc nhầm cuộc chat mới.
+
+11. CHẶN VÀ BÁO CÁO
+
+BLOCK-01 Chuyển người không tự tạo báo cáo hoặc chặn.
+BLOCK-02 Chặn không cần lý do. Ghi theo user_id ổn định, không theo biệt danh/email hiển thị. Kết thúc phiên, chặn ghép ở cả hai chiều và dừng chuyển tin mới khi lệnh có hiệu lực.
+BLOCK-03 Có thể chặn đối tác vừa kết thúc khi phiên còn nằm trong thời hạn thao tác. Không cho nhập mã người bất kỳ để xem thông tin hay chặn qua tra cứu danh tính.
+BLOCK-04 Hai bên cùng chặn tạo hai bản ghi; một bên bỏ chặn không xóa bản ghi bên kia. Bỏ chặn không mở lại phiên cũ.
+BLOCK-05 Danh sách chặn chỉ hiện bí danh/nhãn an toàn của người đã gặp và thời điểm, không tiết lộ danh tính tài khoản. Không hứa chặn được mọi tài khoản mới của cùng một người.
+
+REPORT-01 Lý do: quấy rối tình dục/nội dung không mong muốn; xúc phạm/đe dọa; spam/lừa đảo; tiết lộ thông tin cá nhân; khác. Có mô tả tùy chọn, giới hạn độ dài.
+REPORT-02 [ĐỀ XUẤT] Luồng chính là Báo cáo và chặn. Khi mở biểu mẫu có nút Dừng nhận tin ngay; nhấn nút này phải áp dụng chặn phía máy chủ, không chỉ ẩn tin ở giao diện.
+REPORT-03 Gửi kèm mã phiên, người báo cáo, đối tượng, tin được chọn và ngữ cảnh cần thiết từ máy chủ. Kiểm tra người báo cáo từng tham gia phiên. Không tin nội dung bằng chứng do trình duyệt tự khai.
+REPORT-04 Chặn và tiếp nhận báo cáo là hai kết quả phải theo dõi riêng: nếu chặn thành công nhưng gửi báo cáo lỗi, nói rõ và cho thử lại; không gỡ chặn. Chống báo cáo trùng theo mã yêu cầu.
+REPORT-05 Đối phương rời vẫn báo cáo được trong thời hạn cấu hình. Phải công bố thời hạn và cách truy cập phiên gần nhất; không hứa báo cáo mãi sau khi bằng chứng đã xóa.
+REPORT-06 Người bị chặn/báo cáo chỉ thấy chat kết thúc, không thấy người gửi hoặc nội dung báo cáo. Không tiết lộ thêm ở thông báo xử lý.
+
+Sơ đồ:
+```mermaid
+flowchart TD
+    A["Mở menu an toàn"] --> B{"Chọn hành động"}
+    B -->|Chặn| C["Ghi chặn và kết thúc chat"]
+    B -->|Báo cáo và chặn| D["Chọn lý do và bằng chứng"]
+    D --> E["Ghi chặn, kết thúc và tiếp nhận báo cáo"]
+    E --> F{"Báo cáo đã nhận?"}
+    F -->|Chưa| G["Giữ chặn và cho gửi lại"]
+    F -->|Rồi| H["Thông báo đã tiếp nhận"]
+    H --> I["Điều hành viên xem xét"]
+    I --> J["Kết luận và ghi nhật ký"]
+```
+
+12. ĐIỀU HÀNH VÀ HẠN CHẾ VI PHẠM
+
+MOD-01 Báo cáo: OPEN / IN_REVIEW / RESOLVED / DISMISSED. Hai điều hành viên không được vô tình ghi đè kết luận của nhau; dùng phân công hoặc kiểm tra phiên bản.
+MOD-02 Xem lý do, bằng chứng cần thiết, lịch sử vi phạm đã kết luận; không coi số báo cáo là bằng chứng tự động. Nhận diện báo cáo trùng/ác ý nhưng không bỏ qua chỉ vì số lượng lớn.
+MOD-03 Kết quả: không đủ căn cứ; cảnh cáo; hạn chế gửi; tạm dừng tìm; khóa tạm; khóa dài hạn. Lưu lý do, người xử lý, thời hạn và quyền khiếu nại nếu có.
+MOD-04 Hạn chế tìm không nhất thiết chặn đăng nhập. Hạn chế gửi phải thông báo rõ; mức xử lý nghiêm trọng cần kết thúc phiên đang hoạt động và gỡ khỏi hàng chờ.
+MOD-05 Hết hạn tự khôi phục đúng quyền, không tự đưa người dùng vào hàng chờ. Gỡ hạn chế không xóa lịch sử xử lý.
+MOD-06 Quyền khiếu nại [ĐỀ XUẤT]: người dùng gửi giải trình, điều hành viên xem lại, sửa quyết định nếu nhầm; không tiết lộ danh tính người báo cáo.
+MOD-07 Mọi xem bằng chứng, khóa, gỡ khóa, thay cấu hình đều có nhật ký quyền hạn phù hợp. Không log toàn bộ nội dung chat vào log kỹ thuật mặc định.
+
+13. RIÊNG TƯ VÀ DỮ LIỆU
+
+Người đối diện chỉ được nhận tên hiển thị/nhãn, avatar mặc định và dữ liệu hiển thị được chốt. Không trả email, mã đăng nhập, địa chỉ IP, user_id nội bộ hoặc danh sách chặn cho đối tác qua API/sự kiện. Dùng định danh công khai theo phiên nếu cần.
+Ẩn danh là giữa hai người dùng; không tuyên bố vô danh với đơn vị vận hành hoặc mã hóa đầu cuối nếu chưa triển khai.
+
+[ĐỀ XUẤT] Không có hộp thư lịch sử dài hạn, nhưng có phiên vừa kết thúc trong thời hạn cho phép báo cáo. Tách rõ:
+- Thời gian giao diện còn cho xem phiên gần nhất.
+- Thời gian giữ tin thông thường trên máy chủ.
+- Thời gian giữ bằng chứng báo cáo và nhật ký xử lý.
+Các giá trị này CHƯA CHỐT. Không dùng mặc định lưu vĩnh viễn hoặc xóa ngay. Cần bảo đảm thời hạn giữ bằng chứng đủ phục vụ thời hạn báo cáo.
+Tác vụ dọn dữ liệu phải xử lý bản sao lưu và bản ghi phụ theo chính sách, không chỉ xóa bong bóng chat.
+Xóa tài khoản cần xác minh lại, kết thúc chat/hủy tìm, thu hồi phiên; bằng chứng cần giữ được tách và hạn chế truy cập theo chính sách. Không hứa xóa mọi bằng chứng báo cáo tức thời.
+Không thể bảo đảm ngăn người đối diện chụp ảnh màn hình. Nêu giới hạn này trong thông tin riêng tư phù hợp, không dùng cảnh báo làm gián đoạn mọi cuộc chat.
+
+14. MÀN HÌNH VÀ HÀNH VI MOBILE
+
+S01 Giới thiệu: giá trị sản phẩm, Đăng ký, Đăng nhập, quy tắc và riêng tư.
+S02 Đăng ký; S03 Xác minh email; S04 Đăng nhập; S05 Quên/đặt lại mật khẩu.
+S06 Khởi tạo: giới tính bắt buộc, biệt danh, ưu tiên và điều kiện cần thiết.
+S07 Chat chính: IDLE/WAITING/MATCHING/CHATTING/RECONNECTING/ENDED trên cùng một khung.
+S08 An toàn: chặn, báo cáo và chọn bằng chứng; vẫn truy cập được sau khi đối phương rời trong thời hạn.
+S09 Hồ sơ/cài đặt: biệt danh, giới tính, ưu tiên, bảo mật, chặn, đăng xuất, xóa tài khoản.
+S10 Thông báo hạn chế và khiếu nại.
+S11 Quản trị riêng: hàng báo cáo, chi tiết bằng chứng, xử lý tài khoản, cấu hình, nhật ký.
+
+Khung chat: trên là tên/nhãn đối phương, trạng thái và menu an toàn; giữa là tin và thông báo hệ thống; dưới là ô nhập và gửi. Tách vị trí Kết thúc/Chuyển người khỏi Gửi.
+WAITING có Hủy và thay đổi ưu tiên; thay đổi phải đi qua hủy yêu cầu cũ. ENDED giữ nội dung và hiện Tìm người mới cùng Chặn/Báo cáo.
+Bàn phím không che ô nhập; vùng thao tác đủ dễ bấm; không ép cuộn khi đọc tin cũ; có nút tin mới; xử lý màn hình ngang, chữ lớn, vùng an toàn và bàn phím tiếng Việt. Enter/gửi phải tránh gửi khi bộ gõ đang hoàn tất ký tự.
+Không chỉ dùng màu để biểu thị lỗi hoặc trạng thái. Thông báo hỗ trợ trình đọc màn hình. Chuyển trang không làm mất bản nháp cùng phiên, nhưng bắt đầu phiên mới phải xóa bản nháp cũ.
+
+15. DỮ LIỆU NGHIỆP VỤ TỐI THIỂU
+
+User: id, thông tin đăng nhập riêng tư, trạng thái, mốc xác minh/tạo/xóa.
+Profile: user_id, biệt danh, giới tính, ưu tiên mặc định, mốc hoàn tất và thay đổi.
+AuthSession: user_id, thiết bị/phiên, thời hạn, trạng thái thu hồi. ChatControlLease: quyền điều khiển hiện tại và phiên bản, có thể là thực thể riêng.
+VerificationToken: loại xác minh, định danh, giá trị được bảo vệ, hạn dùng, đã sử dụng.
+MatchRequest: id, user_id, ảnh chụp lựa chọn lúc tìm, tập cho phép, thời gian chờ gốc, trạng thái, phiên bản.
+Conversation: id, trạng thái, mốc tạo/bắt đầu/kết thúc, lý do kết thúc.
+Participant: conversation_id, user_id, nhãn hiển thị theo phiên, kết nối, mốc hoạt động. Đúng hai thành viên khác nhau.
+Message: id, conversation_id, sender_id, client_message_id, số thứ tự máy chủ, nội dung, thời điểm và hạn giữ.
+Block: người chặn, người bị chặn, mốc tạo/gỡ. Ràng buộc không trùng chặn đang hiệu lực cùng chiều.
+Report: id, phiên, người gửi, đối tượng, lý do, mô tả, trạng thái, mốc gửi, người xử lý.
+ReportEvidence: bản chụp bằng chứng cần thiết được bảo vệ và thời hạn riêng; vẫn đọc được khi tin thông thường đến hạn xóa nếu chính sách cho phép.
+Restriction: người bị áp dụng, loại, bắt đầu/kết thúc, lý do, nguồn quyết định, trạng thái gỡ.
+ModerationAction/AuditLog: hành động, người thực hiện, mục tiêu, thời điểm, lý do và thay đổi cần thiết.
+PolicyAcceptance: user_id, phiên bản quy tắc/riêng tư đã chấp nhận, thời điểm.
+
+Đây là mô hình logic, không bắt buộc bảng vật lý hoặc công nghệ cụ thể. Không dùng số người online ở trình duyệt làm nguồn ghép đôi.
+
+16. LỖI, BẢO MẬT VÀ VẬN HÀNH
+
+Máy chủ là nguồn trạng thái. Các thao tác tạo tài khoản, vào hàng chờ, ghép, kết thúc, gửi tin, chặn, báo cáo phải chống lặp và tranh chấp.
+Mỗi sự kiện chat có mã phiên; mỗi lệnh liên quan trạng thái có mã yêu cầu/phiên bản phù hợp. Quyền được kiểm tra ở máy chủ cho từng thao tác.
+Chống đoán mã phiên, truy cập chat của người khác, giả người gửi, tái sử dụng phiên đăng nhập đã thu hồi. Bảo vệ phiên web khỏi lấy cắp và thao tác giả mạo; mật khẩu lưu bằng cơ chế băm thích hợp, không lưu dạng rõ.
+Giới hạn theo tài khoản và tín hiệu rủi ro; không cấm vĩnh viễn chỉ theo IP vì mạng dùng chung. Ngưỡng là cấu hình, không ghi cứng các con số chưa chốt.
+Quá tải: ngừng nhận tìm mới, báo trạng thái thật. Không nhận vào hàng chờ giả hoặc báo đã ghép khi chưa tạo được phiên.
+Máy chủ khởi động lại: khôi phục phiên từ nguồn trạng thái hoặc kết thúc rõ ràng. Không để một người ở WAITING trong khi người kia CHATTING vô hạn.
+Bảo trì: ngừng nhận phiên mới, thông báo phiên hiện tại theo kế hoạch. Không đưa nội dung tin, mật khẩu, token vào báo lỗi.
+Số liệu: thời gian ghép theo nhóm ưu tiên, tỷ lệ tìm bị hủy, tỷ lệ chat có tin hai chiều, lỗi gửi, kết nối lại, chặn/báo cáo, thời gian xử lý. Không dùng thời gian chat dài làm mục tiêu duy nhất.
+
+17. CASE NGHIỆM THU BẮT BUỘC
+
+T01 Email trùng/gửi đăng ký lặp không tạo hai tài khoản; người ngoài không tra cứu được tài khoản qua thông báo công khai.
+T02 Mã xác minh sai, hết hạn, dùng lại không cho vào tìm bạn.
+T03 Quên mật khẩu, gửi lại và đổi mật khẩu không để token cũ tiếp tục dùng.
+T04 Tài khoản thiếu giới tính/ưu tiên không vào hàng chờ dù gọi API trực tiếp.
+T05 A Nam nhận Nữ; B Nữ nhận Nam: ghép thành công.
+T06 A Nam nhận Nữ; B Nữ chỉ nhận Nữ: không ghép khi chưa được cả hai cho phép.
+T07 Chỉ một bên mở rộng không vượt điều kiện bên kia.
+T08 Hai thao tác Tìm liên tục chỉ tạo một yêu cầu.
+T09 Hủy tìm và ghép đồng thời: kết quả nhất quán cho cả hai.
+T10 Nhiều ứng viên tranh cùng một người: chỉ một cặp thành công.
+T11 Đổi ưu tiên khi chờ không để yêu cầu cũ còn hoạt động.
+T12 Chặn xảy ra đúng lúc ghép: không tạo phiên còn quyền chat giữa hai người đã chặn.
+T13 Gửi lại cùng client_message_id không tạo tin trùng.
+T14 Tin và kết thúc đồng thời tuân theo thứ tự chấp nhận máy chủ; không nhận tin mới sau ENDED.
+T15 Sự kiện đến muộn của phiên cũ không xuất hiện trong chat mới.
+T16 Hai bên chuyển cùng lúc tạo một lần kết thúc và tối đa một yêu cầu mới mỗi người.
+T17 Chặn ngăn ghép lại dù đổi biệt danh, đăng nhập thiết bị khác hoặc tải lại.
+T18 Hai bên cùng chặn, một bên bỏ chặn: vẫn không ghép được.
+T19 Báo cáo vẫn gửi được khi đối phương vừa rời; người ngoài không lấy được bằng chứng của phiên.
+T20 Gửi báo cáo lỗi nhưng chặn thành công: giữ chặn và cho thử lại không trùng báo cáo.
+T21 Đổi Wi-Fi/4G hoặc tải lại trong thời hạn: khôi phục đúng phiên và tin thiếu.
+T22 Đối phương rời khi mình mất mạng: quay lại thấy đã kết thúc, không gửi tiếp.
+T23 Hai tab/thiết bị không đồng thời điều khiển; lệnh từ tab cũ không kết thúc phiên mới.
+T24 Hạn chế nghiêm trọng đang áp dụng dừng quyền gửi và tìm ở mọi thiết bị.
+T25 Hết hạn hạn chế khôi phục quyền nhưng không tự ghép.
+T26 Khóa/xóa/đăng xuất khi đang chờ dọn yêu cầu; khi chat kết thúc đúng phía còn lại.
+T27 Nội dung script là chữ, không chạy; sửa sender_id/conversation_id không mạo danh hoặc đọc được chat.
+T28 Bàn phím mobile, bộ gõ tiếng Việt, màn hình nhỏ, chữ lớn và đọc tin cũ hoạt động đúng.
+T29 Khởi động lại hoặc quá tải không ghép đôi hai lần và không báo gửi thành công nếu chưa nhận tin.
+T30 Dọn tin thường đúng hạn không xóa nhầm bằng chứng còn thời hạn; dữ liệu quá hạn bị dọn theo chính sách.
+T31 Hai điều hành viên xử lý đồng thời không ghi đè quyết định âm thầm.
+T32 Tạo tài khoản mới không tự vượt qua mọi biện pháp chống lạm dụng; phải thể hiện đúng giới hạn của nhận diện, không hứa chặn tuyệt đối.
+
+18. QUYẾT ĐỊNH CHƯA CHỐT VÀ MẶC ĐỊNH ĐỀ XUẤT
+
+Q01 Đăng nhập bắt buộc trước chat? Đề xuất: có. Người dùng đã yêu cầu có đăng ký/đăng nhập nhưng chưa chốt có chat khách hay không.
+Q02 Phương thức tài khoản? Đề xuất: email/mật khẩu và xác minh email. Chưa được yêu cầu cụ thể.
+Q03 Độ tuổi được phép và cách xác nhận? Chưa chốt; bắt buộc giải quyết trước phát hành.
+Q04 Các lựa chọn giới tính? Đề xuất: Nam/Nữ/Khác.
+Q05 Ưu tiên mềm hay bắt buộc? Đề xuất: chỉ mở rộng khi người dùng chọn.
+Q06 Giới tính đối phương có hiển thị? Đề xuất: ẩn trong MVP.
+Q07 Có biệt danh tự nhập? Đề xuất: có, avatar mặc định.
+Q08 Có xem lại lịch sử? Đề xuất: chỉ phiên gần nhất trong thời hạn báo cáo, không hộp thư dài hạn.
+Q09 Thời hạn giữ tin, bằng chứng và thời hạn báo cáo? Chưa chốt; không tự gán khi phát hành.
+Q10 Kết bạn/kết nối lại? Đề xuất: chưa có ở MVP.
+Q11 Link và thông tin liên hệ? Chưa chốt chính sách cho phép, cảnh báo hoặc giới hạn.
+Q12 Các ngưỡng: thời gian chờ mở rộng, tránh ghép lại, hạn mức gửi, đổi giới tính, thử đăng nhập, hạn chế vi phạm? Chưa chốt; đề xuất quản lý bằng cấu hình. Chờ kết nối lại 30 giây chỉ là giá trị thử nghiệm.
+
+19. THỨ TỰ TRIỂN KHAI ĐỀ XUẤT
+
+Giai đoạn 1: xác nhận quyết định mở; thiết kế trạng thái, mô hình dữ liệu, quyền và prototype mobile.
+Giai đoạn 2: đăng ký/đăng nhập/xác minh/khôi phục, hồ sơ và phân quyền.
+Giai đoạn 3: hàng chờ và ghép hai chiều, hủy/tải lại/nhiều tab.
+Giai đoạn 4: chat thật, chống tin trùng, kết thúc/chuyển/kết nối lại.
+Giai đoạn 5: chặn, báo cáo, bằng chứng, điều hành và hạn chế.
+Giai đoạn 6: kiểm tra đồng thời, quyền riêng tư, mobile, vận hành và nghiệm thu các case mục 17.
+Mỗi giai đoạn phải chứng minh hành vi hoạt động thực tế. Tách dữ liệu demo khỏi dữ liệu thật và không trình bày mô phỏng như hệ thống chat đã hoàn thiện.
+
+KẾT THÚC TÀI LIỆU

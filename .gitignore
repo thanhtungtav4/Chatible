@@ -1,0 +1,29 @@
+# OS & Editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# Dependencies & Build artifacts
+vendor/
+node_modules/
+dist/
+build/
+storage/*.key
+
+# Python & Spec-Kit local cache
+__pycache__/
+*.py[cod]
+.venv/
+.specify/bugs/*/
+.specify/assessments/*/
