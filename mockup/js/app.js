@@ -1018,6 +1018,49 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
+
+  // Unblock User Handler (BLOCK-04)
+  function unblockUser(cardId, alias) {
+    const el = document.getElementById(cardId);
+    if (el) {
+      el.style.opacity = '0.4';
+      el.style.pointerEvents = 'none';
+      el.querySelector('button').textContent = 'Đã gỡ';
+      showToast(`Đã bỏ chặn ${alias}. Bỏ chặn không tự khôi phục bạn bè (BLOCK-04).`);
+    }
+  }
+  window.unblockUser = unblockUser;
+
+  // Create Group Type Selector
+  let selectedCreateGroupType = 'public';
+  function selectGroupType(type) {
+    selectedCreateGroupType = type;
+    const pubChoice = document.getElementById('choice-group-public');
+    const protChoice = document.getElementById('choice-group-protected');
+    const passField = document.getElementById('new-group-passcode-field');
+
+    if (pubChoice) pubChoice.classList.toggle('active', type === 'public');
+    if (protChoice) protChoice.classList.toggle('active', type === 'protected');
+    if (passField) passField.style.display = type === 'protected' ? 'block' : 'none';
+  }
+  window.selectGroupType = selectGroupType;
+
+  // Confirm Create Group Handler
+  const btnConfirmCreateGroup = document.getElementById('btn-confirm-create-group');
+  if (btnConfirmCreateGroup) {
+    btnConfirmCreateGroup.addEventListener('click', () => {
+      const nameInput = document.getElementById('new-group-name');
+      const name = nameInput ? nameInput.value.trim() : '';
+      if (!name) {
+        showToast('Vui lòng nhập tên phòng chat.');
+        return;
+      }
+
+      closeSheet(document.getElementById('sheet-create-group'));
+      showToast(`🎉 Đã tạo ${selectedCreateGroupType === 'public' ? 'Nhóm Public' : 'Nhóm có Mật khẩu'}: "${name}"`);
+      if (nameInput) nameInput.value = '';
+    });
+  }
   // Initial State: Launch into IDLE
   setChatState('IDLE');
 });

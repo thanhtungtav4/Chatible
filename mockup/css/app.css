@@ -2440,3 +2440,72 @@ button {
 .btn-logout-row:active {
   transform: scale(0.98);
 }
+
+/* ==========================================================================
+   Additional Sheets: Blocked Users, Privacy KMS, Create Group & Logout
+   ========================================================================== */
+.blocked-user-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.privacy-feature-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.privacy-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.create-group-type-selector {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.group-type-choice {
+  flex: 1;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  border: 2px solid var(--border-subtle);
+  text-align: left;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.group-type-choice.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.form-input-field {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-top: 6px;
+}
