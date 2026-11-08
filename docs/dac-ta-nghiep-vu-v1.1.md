@@ -413,6 +413,8 @@ D27 — CHỐT: dùng envelope encryption + KMS cho dữ liệu lưu trữ; ngư
 D28 — CHỐT: ngày sinh tự khai lúc tạo tài khoản là đủ điều kiện tuổi cho bản đầu, kể cả media nhạy cảm; không có giấy tờ hoặc dịch vụ xác minh tuổi bên thứ ba.
 D29 — CHỐT: mỗi ảnh dưới 30 MB và mỗi video clip dưới 100 MB; máy chủ kiểm tra kích thước thực trước khi xử lý/công bố.
 D30 — CHỐT: dùng customer-managed KMS key thuộc tài khoản cloud của chủ sản phẩm; không tự dựng KMS/HSM riêng trong bản đầu.
+D31 — CHỐT: Xử lý nén ảnh phía client (Client-side Pre-upload Image Compression) trước khi gửi lên máy chủ để tăng tốc độ upload trên mạng di động, giảm 90%+ kích thước tệp và giải phóng tải CPU cho máy chủ đơn. Máy chủ vẫn duy trì van kiểm tra an toàn kích thước thực (< 30 MB) và loại tệp hợp lệ trước khi bọc khóa KMS và lưu trữ. Nguồn: chỉ đạo chủ sản phẩm ngày 08/11/2026.
+D32 — CHỐT MỞ RỘNG: Bổ sung không gian Nhóm & Kênh trong Hộp thư: (1) Kênh thông báo chung (Broadcast: chỉ Quản trị viên đăng tin, thành viên chỉ đọc); (2) Nhóm chat công khai (Public Group: thành viên tham gia tự do); (3) Nhóm chat bảo mật có mật khẩu (Password-Protected: bắt buộc nhập đúng mã Passcode mới được mở khóa tham gia). Nguồn: cùng lần chỉ đạo trên.
 Các đề xuất AUTH-12/13/14 và thực thể dữ liệu bổ sung là nội dung phân tích, chưa phải quyết định đã duyệt.
 
 21. KẾT BẠN VÀ TRÒ CHUYỆN LẠI
@@ -438,6 +440,13 @@ flowchart LR
     F --> G["Hủy kết bạn hoặc chặn — quy tắc chi tiết đề xuất"]
 ```
 
+21A. KÊNH THÔNG BÁO VÀ NHÓM CHAT (GROUPS & CHANNELS)
+
+GRP-01 [CHỐT — 08/11/2026] Hỗ trợ ba hình thức giao tiếp nhóm trong không gian Hộp thư: Kênh thông báo chung (Broadcast), Nhóm chat công khai (Public), và Nhóm chat bảo mật có mật khẩu (Password-Protected).
+GRP-02 [CHỐT — 08/11/2026] Kênh thông báo chung là kênh một chiều (One-way broadcast). Chỉ Quản trị viên tối cao hoặc tài khoản được phân quyền mới có quyền đăng bài; toàn bộ thành viên chỉ có quyền đọc tin tức, thông báo chính sách và bảo trì hệ thống. Thanh nhập tin nhắn tự động khóa đối với thành viên thông thường.
+GRP-03 [CHỐT — 08/11/2026] Nhóm chat công khai (Public Group) cho phép mọi thành viên trong nền tảng tự do tham gia, trò chuyện đa bên, gửi tin nhắn chữ và media theo chính sách chung. Tin nhắn hiển thị rõ tên và màu đại diện của từng thành viên gửi.
+GRP-04 [CHỐT — 08/11/2026] Nhóm chat bảo mật có mật khẩu (Password-Protected Secret Group) yêu cầu thành viên phải nhập đúng mã mật khẩu/passcode để mở khóa trước khi được cấp quyền đọc và gửi tin. Máy chủ từ chối cấp luồng tin nhắn nếu phiên người dùng chưa vượt qua xác thực mật khẩu phòng.
+
 22. ẢNH, GHI ÂM VÀ VIDEO CLIP
 
 MEDIA-01 [CHỐT] Hỗ trợ gửi ảnh, ghi âm và video clip. Đây là tin nhắn media, không phải cuộc gọi trực tiếp. Không suy ra hỗ trợ mọi loại tệp đính kèm.
@@ -447,6 +456,7 @@ MEDIA-04 [ĐỀ XUẤT] Kiểm tra quyền cả trước khi bắt đầu tải 
 MEDIA-05 [ĐỀ XUẤT] Luồng gửi: chọn/ghi → xem hoặc nghe thử → gửi → tải lên → kiểm tra/xử lý → máy chủ tiếp nhận tin hoặc báo lỗi. Hủy bản nháp/ghi âm chưa gửi không tạo tin phía đối phương. Các trạng thái tải và xử lý phải phân biệt với đã gửi.
 MEDIA-06 [ĐỀ XUẤT] Microphone chỉ được yêu cầu khi người dùng bắt đầu ghi âm. Nếu từ chối quyền hoặc thiết bị không hỗ trợ, vẫn cho gửi chữ và chọn các media được hỗ trợ. Bị gián đoạn trong lúc ghi cần báo rõ kết quả, không tự gửi bản ghi dở.
 MEDIA-07 [CHỐT MỘT PHẦN — 07/11/2026] Mỗi ảnh gửi lên phải nhỏ hơn 30 MB (30.000.000 byte); mỗi video clip gửi lên phải nhỏ hơn 100 MB (100.000.000 byte). Máy chủ kiểm tra giới hạn theo kích thước thực trước khi xử lý/công bố; không chỉ dựa trên khai báo của trình duyệt hoặc phần mở rộng. Tệp vượt giới hạn bị từ chối rõ ràng và không tạo tin/media hiển thị phía người nhận. Giới hạn ghi âm, định dạng, thời lượng, số tệp mỗi tin, hạn mức tài khoản và tổng lưu trữ còn cần chốt.
+MEDIA-07A [CHỐT — 08/11/2026] Xử lý nén ảnh phía client (Client-side Pre-upload Image Compression): Trình duyệt người dùng tự động tối ưu hóa và nén ảnh (sử dụng Canvas API / WebAssembly, định dạng WebP hoặc JPEG chất lượng cao ~80%, giới hạn chiều dài tối đa 1440px – 1920px) trước khi tải lên máy chủ. Quá trình này giúp giảm 90%+ kích thước tệp (từ hàng chục MB xuống còn ~300KB – 800KB), tăng tốc độ gửi tức thì trên mạng di động và triệt tiêu tải CPU xử lý ảnh trên máy chủ đơn. Máy chủ vẫn duy trì van an toàn kiểm tra tệp thực tế (Magic bytes hợp lệ và dung lượng không vượt quá 30 MB) trước khi bọc khóa KMS và lưu trữ.
 MEDIA-08 [ĐỀ XUẤT] Tệp gắn với người gửi, cuộc chat và thao tác gửi; không dùng lại tệp của người khác hoặc tự đổi sang cuộc chat khác. Thử lại không tạo tin trùng. Tệp tải dở, tải lỗi hoặc không bao giờ được gửi phải được dọn theo thời hạn riêng.
 MEDIA-09 [ĐỀ XUẤT] Media chỉ truy cập được theo quyền của cuộc chat hoặc quyền xem bằng chứng. Không dùng thư viện tệp công khai. Bản gốc, bản chuyển đổi và ảnh xem trước đều phải theo cùng chính sách quyền và thời hạn. Không đưa thông tin vị trí/metadata nhạy cảm không cần thiết vào bản gửi cho đối phương.
 MEDIA-10 [ĐỀ XUẤT] Không tự phát ghi âm hoặc video. Cho xem ảnh, nghe và điều khiển phát video trong ứng dụng. Giới hạn nhận media phải có giải thích dễ hiểu ở cả phía gửi và nhận. Quyền tải/lưu media và cách che nội dung xem trước còn cần chốt.

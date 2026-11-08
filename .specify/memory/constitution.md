@@ -25,7 +25,7 @@
 - **AuditLog:** Lưu trữ nhật ký kiểm toán trong 180 ngày; bản sao lưu mã hóa database lưu tối đa 35 ngày.
 
 ### V. Kiểm soát Media, Watermark Động & Hạn chế Lưu
-- **Giới hạn Kích thước:** Kiểm tra kích thước thực tế phía máy chủ: Ảnh $< 30$ MB, Video clip $< 100$ MB. Tệp vượt quá kích thước bị từ chối ngay lập tức.
+- **Giới hạn Kích thước & Nén Client-Side:** Trình duyệt người dùng tự động resize và nén ảnh (về chuẩn WebP/JPEG chất lượng cao, dung lượng ~300KB–800KB) trước khi gửi để giải phóng tải CPU máy chủ và tăng tốc độ mạng di động. Máy chủ kiểm tra kích thước thực tế $(<30$ MB ảnh, $<100$ MB video) và xác thực magic bytes trước khi mã hóa.
 - **Quyền Nhận Media:** Trong chat người lạ, người nhận phải chủ động bật nhận media mới được gửi; bạn bè được gửi mặc định.
 - **Nội dung Người lớn (Adult/Sensitive Content):** 
   - Chỉ cho phép giữa người lớn có đồng thuận khi người gửi chủ động bấm nút "Nội dung người lớn" và xác nhận cam kết 18+.
@@ -63,4 +63,4 @@
 - Bản Hiến pháp này là kim chỉ nam tối cao cho toàn bộ quá trình Spec-Driven Development của dự án Chatible.
 - Mọi điều chỉnh liên quan đến chính sách tuổi, mã hóa, lưu trữ dữ liệu và quyền hạn của Quản trị viên tối cao bắt buộc phải có sự phê duyệt chính thức bằng văn bản của Chủ sản phẩm.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-07 | **Source**: `docs/dac-ta-nghiep-vu-v1.1.md`
+**Version**: 1.2.0 | **Ratified**: 2026-11-07 | **Last Amended**: 2026-11-08 | **Source**: `docs/dac-ta-nghiep-vu-v1.1.md`
