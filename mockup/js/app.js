@@ -591,18 +591,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Friends Filter Tabs (All vs Online)
-  document.querySelectorAll('.friend-filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.friend-filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const isOnlineOnly = btn.dataset.filter === 'online';
-      document.querySelectorAll('.friend-item-card').forEach(card => {
+  // Toggle Online Friends Filter (Pill Button)
+  const btnToggleOnline = document.getElementById('btn-toggle-online-friends');
+  if (btnToggleOnline) {
+    btnToggleOnline.addEventListener('click', () => {
+      btnToggleOnline.classList.toggle('active');
+      const isOnlineOnly = btnToggleOnline.classList.contains('active');
+      document.querySelectorAll('#inbox-tab-friends .friend-item-card').forEach(card => {
         const isOffline = card.querySelector('.offline-badge') !== null;
         card.style.display = (isOnlineOnly && isOffline) ? 'none' : 'flex';
       });
+      showToast(isOnlineOnly ? 'Đang lọc bạn bè đang online' : 'Hiển thị tất cả bạn bè');
     });
-  });
+  }
 
   // Inbox Segmented Tabs (Friends vs Groups/Channels)
   const inboxPillFriends = document.getElementById('inbox-pill-friends');
