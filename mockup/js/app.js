@@ -98,8 +98,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function switchScreen(screenId) {
     state.currentScreen = screenId;
+    window.scrollTo(0, 0);
     screens.forEach(screen => {
-      screen.classList.toggle('active', screen.id === screenId);
+      const isTarget = screen.id === screenId;
+      screen.classList.toggle('active', isTarget);
+      if (isTarget) {
+        screen.scrollTop = 0;
+      }
     });
   }
 
@@ -117,6 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Screen S07: Random Chat State Machine
   // =========================================================================
   function setChatState(newState) {
+    window.setChatState = setChatState;
     state.chatState = newState;
     clearInterval(state.timerInterval);
     clearInterval(state.reconnectInterval);
@@ -308,18 +314,40 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function simulatePartnerReply(userText) {
+    const stream = document.getElementById('random-messages-stream');
+    if (!stream) return;
+
     setTimeout(() => {
       if (state.chatState !== 'CHATTING') return;
 
-      const responses = [
-        'Haha đúng rồi đó bạn ơi! Bạn đang ở khu vực nào thế?',
-        'Nghe hay đấy! Mình cũng hay lướt web vào giờ này.',
-        'Bạn thích nghe nhạc hay xem phim gì không?',
-        'Giao diện web này vuốt mượt như app thật nhỉ!'
-      ];
-      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-      addIncomingMessage(randomResponse);
-    }, 1200);
+      // Create typing indicator bubble
+      const typingBubble = document.createElement('div');
+      typingBubble.className = 'typing-bubble';
+      typingBubble.id = 'partner-typing-indicator';
+      typingBubble.innerHTML = `
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+      `;
+      stream.appendChild(typingBubble);
+      stream.scrollTop = stream.scrollHeight;
+
+      setTimeout(() => {
+        if (typingBubble && typingBubble.parentNode) {
+          typingBubble.parentNode.removeChild(typingBubble);
+        }
+        if (state.chatState !== 'CHATTING') return;
+
+        const responses = [
+          'Haha đúng rồi đó bạn ơi! Bạn đang ở khu vực nào thế?',
+          'Nghe hay đấy! Mình cũng hay lướt web vào giờ này.',
+          'Bạn thích nghe nhạc hay xem phim gì không?',
+          'Giao diện web này vuốt mượt như app thật nhỉ!'
+        ];
+        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+        addIncomingMessage(randomResponse);
+      }, 1200);
+    }, 400);
   }
 
   function escapeHtml(string) {
@@ -448,6 +476,97 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function closeSheet(sheetEl) {
     if (sheetEl) sheetEl.classList.remove('open');
+  }
+
+  window.openSheet = openSheet;
+  window.closeSheet = closeSheet;
+
+  function openTranscript(sessionId, partner, meta, expiry) {
+    const titleEl = document.getElementById('transcript-sheet-title');
+    const expiryEl = document.getElementById('transcript-sheet-expiry');
+    if (titleEl) titleEl.textContent = `Bản ghi Phiên #${sessionId} • ${partner} (${meta})`;
+    if (expiryEl) expiryEl.textContent = expiry;
+    openSheet(document.getElementById('sheet-session-transcript'));
+  }
+  window.openTranscript = openTranscript;
+
+  // S14 Friend Chat Handlers
+  document.querySelectorAll('[data-open-friend]').forEach(card => {
+    card.addEventListener('click', () => {
+      const friendId = card.dataset.openFriend;
+      const friend = state.friends.find(f => f.id === friendId) || { name: 'Hải Yến', gender: 'Nữ', age: 21, online: true };
+      state.activeFriendChat = friend;
+
+      const nameEl = document.getElementById('friend-chat-name');
+      const statusEl = document.getElementById('friend-chat-status');
+      const dotEl = document.getElementById('friend-chat-online-dot');
+      
+      if (nameEl) nameEl.textContent = friend.name;
+      if (statusEl) statusEl.textContent = friend.online ? 'Đang online' : 'Offline (Tin nhắn lưu hàng đợi 30d)';
+      if (dotEl) dotEl.style.display = friend.online ? 'block' : 'none';
+
+      switchScreen('screen-friend-chat');
+    });
+  });
+
+  const btnBackFromFriendChat = document.getElementById('btn-back-from-friend-chat');
+  if (btnBackFromFriendChat) {
+    btnBackFromFriendChat.addEventListener('click', () => {
+      switchScreen('screen-friends');
+    });
+  }
+
+  // Send Friend Message Handler (Supports offline queuing)
+  const btnSendFriendMsg = document.getElementById('btn-send-friend-msg');
+  const friendInputField = document.getElementById('friend-input-text');
+
+  function handleSendFriendMessage() {
+    if (!friendInputField) return;
+    const text = friendInputField.value.trim();
+    if (!text) return;
+
+    const stream = document.getElementById('friend-messages-stream');
+    if (!stream) return;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble outgoing';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const isOnline = state.activeFriendChat ? state.activeFriendChat.online : true;
+
+    bubble.innerHTML = `
+      <div class="bubble-content">${escapeHtml(text)}</div>
+      <div class="bubble-time">${time} • ${isOnline ? 'Đã gửi' : '<span class="offline-queue-badge">🕒 Lưu hàng đợi offline</span>'}</div>
+    `;
+    stream.appendChild(bubble);
+    stream.scrollTop = stream.scrollHeight;
+    friendInputField.value = '';
+
+    if (isOnline) {
+      setTimeout(() => {
+        const replyBubble = document.createElement('div');
+        replyBubble.className = 'message-bubble incoming';
+        replyBubble.innerHTML = `
+          <div class="bubble-content">Oke bạn nhé, mai gặp nha!</div>
+          <div class="bubble-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+        `;
+        stream.appendChild(replyBubble);
+        stream.scrollTop = stream.scrollHeight;
+      }, 1000);
+    } else {
+      showToast('Bạn bè đang offline. Tin nhắn sẽ tự động gửi khi họ online lại.');
+    }
+  }
+
+  if (btnSendFriendMsg) {
+    btnSendFriendMsg.addEventListener('click', handleSendFriendMessage);
+  }
+  if (friendInputField) {
+    friendInputField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSendFriendMessage();
+      }
+    });
   }
 
   // Close backdrops on click

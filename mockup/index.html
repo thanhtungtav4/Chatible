@@ -192,8 +192,11 @@
               <!-- Partner Top Bar -->
               <div class="chat-partner-bar">
                 <div class="partner-info">
+                  <button class="icon-btn" onclick="setChatState('IDLE')" title="Quay lại" style="width: 34px; height: 34px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
                   <div class="partner-avatar">
-                    <span id="partner-avatar-initial">T</span>
+                    <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Avatar"/>
                     <span class="online-dot"></span>
                   </div>
                   <div>
@@ -298,21 +301,35 @@
             </div>
           </header>
 
-          <div style="padding: 10px 16px; background: var(--surface-card); border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-            <span>Nhắn tin bạn bè hỗ trợ khi offline • Từng tin tự xóa sau 30 ngày</span>
+          <!-- Search Box (Chatx Frame 6) -->
+          <div style="padding: 10px 18px 4px 18px;">
+            <div class="search-input-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" placeholder="Tìm kiếm bạn bè..." />
+            </div>
+          </div>
+
+          <!-- Filter Tabs -->
+          <div style="display: flex; gap: 8px; padding: 6px 18px;">
+            <button class="chip-btn active" style="padding: 6px 14px; font-size: 12px;">Tất cả (3)</button>
+            <button class="chip-btn" style="padding: 6px 14px; font-size: 12px;">Đang online (1)</button>
+          </div>
+
+          <div style="padding: 8px 18px; font-size: 11.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            <span>Nhắn tin bạn bè khi offline • Tự động dọn sau 30 ngày</span>
           </div>
 
           <!-- Friends List -->
           <div class="friend-list">
-            <div class="friend-item-card" onclick="alert('Mở luồng chat bạn bè với Hải Yến. Cho phép gửi tin khi offline!')">
+            <div class="friend-item-card" data-open-friend="F01">
               <div class="friend-left">
                 <div class="partner-avatar">
-                  <span>Y</span>
+                  <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Yến"/>
                   <span class="online-dot"></span>
                 </div>
                 <div class="friend-meta">
-                  <h4>Hải Yến <span style="font-size: 11px; font-weight: 500; color: var(--text-muted);">(Nữ, 21t)</span></h4>
+                  <h4>Hải Yến <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">(Nữ, 21t)</span></h4>
                   <p>Hẹn mai cafe nhé!</p>
                 </div>
               </div>
@@ -322,10 +339,10 @@
               </div>
             </div>
 
-            <div class="friend-item-card" onclick="alert('Mở luồng chat bạn bè với Tuấn Kiệt (đang offline). Tin nhắn sẽ gửi vào hàng đợi!')">
+            <div class="friend-item-card" data-open-friend="F02">
               <div class="friend-left">
-                <div class="partner-avatar" style="background: #334155;">
-                  <span>K</span>
+                <div class="partner-avatar">
+                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80" alt="Kiệt"/>
                 </div>
                 <div class="friend-meta">
                   <h4>Tuấn Kiệt <span class="offline-badge">Offline</span></h4>
@@ -335,10 +352,10 @@
               <div style="font-size: 11px; color: var(--text-muted);">Hôm qua</div>
             </div>
 
-            <div class="friend-item-card">
+            <div class="friend-item-card" data-open-friend="F03">
               <div class="friend-left">
-                <div class="partner-avatar" style="background: #334155;">
-                  <span>M</span>
+                <div class="partner-avatar">
+                  <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Linh"/>
                 </div>
                 <div class="friend-meta">
                   <h4>Mai Linh <span class="offline-badge">Offline</span></h4>
@@ -347,6 +364,60 @@
               </div>
               <div style="font-size: 11px; color: var(--text-muted);">02/11</div>
             </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             SCREEN 2B: S14 - KHUNG CHAT BẠN BÈ (1–1 Friend Chat with Offline support)
+             ================================================================ -->
+        <section class="screen-view" id="screen-friend-chat">
+          <header class="chat-partner-bar">
+            <div class="partner-info">
+              <button class="icon-btn" id="btn-back-from-friend-chat" style="width: 36px; height: 36px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <div class="partner-avatar" style="width: 38px; height: 38px;">
+                <img id="friend-chat-avatar-img" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Avatar"/>
+                <span class="online-dot" id="friend-chat-online-dot"></span>
+              </div>
+              <div>
+                <div class="partner-name-row">
+                  <span class="partner-name" id="friend-chat-name">Hải Yến</span>
+                  <span class="partner-badge">Bạn bè</span>
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted);" id="friend-chat-status">Đang online</div>
+              </div>
+            </div>
+            <div class="partner-actions">
+              <button class="icon-btn danger-text" onclick="openSheet(document.getElementById('sheet-safety-menu'))">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <div style="padding: 8px 16px; background: var(--surface-card); border-bottom: 1px solid var(--border-subtle); font-size: 11px; color: var(--text-secondary); text-align: center;">
+            🔒 Từng tin/media tự động xóa sau 30 ngày kể từ lúc gửi (accepted_at + 30d)
+          </div>
+
+          <div class="messages-stream" id="friend-messages-stream">
+            <div class="message-bubble incoming">
+              <div class="bubble-content">Hẹn mai cafe nhé! Quán cũ 9h nha bạn.</div>
+              <div class="bubble-time">10:24</div>
+            </div>
+          </div>
+
+          <div class="chat-input-bar">
+            <div class="input-actions-left">
+              <button class="icon-btn" onclick="openSheet(document.getElementById('sheet-media-upload'))">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              </button>
+            </div>
+            <div class="input-text-wrapper">
+              <input type="text" class="chat-input-field" id="friend-input-text" placeholder="Nhắn tin cho bạn bè..." />
+            </div>
+            <button class="btn-send" id="btn-send-friend-msg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
           </div>
         </section>
 
@@ -375,9 +446,8 @@
                 <span class="recent-expiry">Còn 6 ngày 22 giờ</span>
               </div>
               <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button class="btn-sm-ghost" style="flex: 1;" onclick="alert('Đang mở lại bản ghi chat đã mã hóa của Phiên #RC-9941...')">Xem lại tin</button>
+                <button class="btn-sm-ghost" style="flex: 1;" onclick="openTranscript('RC-9941', 'Bảo Ngọc', 'Nữ, 20t', 'Còn 6 ngày 22 giờ')">Xem lại tin</button>
                 <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
-              </div>
             </div>
 
             <div class="recent-card">
@@ -389,9 +459,8 @@
                 <span class="recent-expiry">Còn 5 ngày 14 giờ</span>
               </div>
               <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button class="btn-sm-ghost" style="flex: 1;">Xem lại tin</button>
+                <button class="btn-sm-ghost" style="flex: 1;" onclick="openTranscript('RC-9830', 'Quang Huy', 'Nam, 24t', 'Còn 5 ngày 14 giờ')">Xem lại tin</button>
                 <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
-              </div>
             </div>
 
             <div class="recent-card">
@@ -403,9 +472,8 @@
                 <span class="recent-expiry">Còn 3 ngày 08 giờ</span>
               </div>
               <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button class="btn-sm-ghost" style="flex: 1;">Xem lại tin</button>
+                <button class="btn-sm-ghost" style="flex: 1;" onclick="openTranscript('RC-9712', 'Thanh Hằng', 'Nữ, 22t', 'Còn 3 ngày 08 giờ')">Xem lại tin</button>
                 <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
-              </div>
             </div>
           </div>
         </section>
@@ -445,7 +513,7 @@
               </div>
               <div class="sheet-menu-item" style="border: none; border-top: 1px solid var(--border-subtle); padding: 12px 0;">
                 <span class="menu-item-title">Mô phỏng Màn hình S10: Hạn chế & Khiếu nại</span>
-                <button class="btn-sm-ghost" onclick="alert('Màn hình S10: Thông báo tài khoản bị hạn chế và quyền gửi giải trình khiếu nại trong 7 ngày.')">Mở xem</button>
+                <button class="btn-sm-ghost" onclick="openSheet(document.getElementById('sheet-restriction-appeal'))">Mở xem S10</button>
               </div>
               <div class="sheet-menu-item" style="border: none; border-top: 1px solid var(--border-subtle); padding: 12px 0;">
                 <span class="menu-item-title">Chính sách riêng tư & Quản trị</span>
@@ -594,12 +662,82 @@
     </div>
   </div>
 
+  <!-- ====================================================================
+       BOTTOM SHEET 4: S15 - XEM LẠI PHIÊN GẦN ĐÂY (Lưu 7 ngày)
+       ==================================================================== -->
+  <div class="bottom-sheet-backdrop" id="sheet-session-transcript">
+    <div class="bottom-sheet-content">
+      <div class="sheet-drag-handle"></div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <h3 class="sheet-title" id="transcript-sheet-title">Bản ghi Phiên #RC-9941</h3>
+        <span class="recent-expiry" id="transcript-sheet-expiry">Còn 6 ngày 22 giờ</span>
+      </div>
+      <p class="sheet-desc">Nội dung mã hóa KMS được lưu giữ 7 ngày theo D14 để xem lại hoặc lấy bằng chứng báo cáo.</p>
+
+      <div class="transcript-stream" id="transcript-messages-body">
+        <div class="message-bubble incoming">
+          <div class="bubble-content">Chào bạn nhé!</div>
+          <div class="bubble-time">2 giờ trước</div>
+        </div>
+        <div class="message-bubble outgoing">
+          <div class="bubble-content">Chào Bảo Ngọc! Rất vui được trò chuyện cùng bạn.</div>
+          <div class="bubble-time">2 giờ trước • Đã gửi</div>
+        </div>
+        <div class="message-bubble incoming">
+          <div class="bubble-content">Bạn có hay nghe nhạc Indie Việt không?</div>
+          <div class="bubble-time">2 giờ trước</div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 14px;">
+        <button class="btn-primary-big" style="flex: 1; background: var(--surface-elevated); color: var(--danger); box-shadow: none;" onclick="closeSheet(document.getElementById('sheet-session-transcript')); openSheet(document.getElementById('sheet-report-form'));">
+          Báo cáo vi phạm phiên này
+        </button>
+        <button class="btn-primary-big" style="width: auto; padding: 0 20px; background: var(--surface-hover); color: var(--text-primary); box-shadow: none;" onclick="closeSheet(document.getElementById('sheet-session-transcript'))">
+          Đóng
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       BOTTOM SHEET 5: S10 - THÔNG BÁO HẠN CHẾ & KHIẾU NẠI (RESTRICTION & APPEAL)
+       ==================================================================== -->
+  <div class="bottom-sheet-backdrop" id="sheet-restriction-appeal">
+    <div class="bottom-sheet-content">
+      <div class="sheet-drag-handle"></div>
+      <h3 class="sheet-title">Thông báo Hạn chế (Màn hình S10)</h3>
+      <p class="sheet-desc">Hệ thống xử lý chế tài tự động dựa trên báo cáo và kết luận điều hành.</p>
+
+      <div class="restriction-alert-box">
+        <div class="restriction-alert-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Tài khoản bị Tạm dừng tìm bạn (48 giờ)</span>
+        </div>
+        <div class="restriction-meta">
+          <strong>Lý do:</strong> Vi phạm tiêu chuẩn an toàn cộng đồng.<br/>
+          <strong>Thời hạn còn lại:</strong> <span class="timer-badge-danger">36 giờ 14 phút</span><br/>
+          <strong>Quyền hiện tại:</strong> Bị loại khỏi hàng chờ ghép ngẫu nhiên; vẫn được nhắn tin với bạn bè hiện có và gửi giải trình khiếu nại.
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; text-align: left;">
+        <label style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Gửi giải trình khiếu nại (1 lần duy nhất):</label>
+        <textarea style="width: 100%; height: 75px; padding: 10px; background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13.5px; resize: none; margin-top: 6px;" placeholder="Nhập lý do bạn cho rằng quyết định xử lý chưa chính xác..."></textarea>
+      </div>
+
+      <button class="btn-primary-big" style="margin-top: 14px;" onclick="closeSheet(document.getElementById('sheet-restriction-appeal')); showToast('Giải trình khiếu nại đã được gửi tới Quản trị viên tối cao.');">
+        Gửi giải trình cho Quản trị viên
+      </button>
+    </div>
+  </div>
+
   <!-- App Floating Toast -->
   <div class="toast-notice" id="app-toast">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
     <span class="toast-text">Thông báo hệ thống</span>
   </div>
 
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>
