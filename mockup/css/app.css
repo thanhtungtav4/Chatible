@@ -1843,24 +1843,68 @@ button {
   gap: 12px;
 }
 
+/* Screen S15: Recent Sessions Refined */
 .recent-card {
   background: #ffffff;
-  border-radius: var(--radius-md);
-  padding: 16px;
+  border-radius: 20px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   box-shadow: var(--shadow-sm);
+  transition: all 180ms ease;
 }
 
 [data-theme="dark"] .recent-card {
   background: var(--surface-card);
 }
 
-.recent-header {
+.recent-top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+}
+
+.recent-partner-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.recent-title-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  text-align: left;
+}
+
+.recent-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-partner-name {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.recent-sub-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .recent-expiry {
@@ -1868,8 +1912,48 @@ button {
   font-weight: 800;
   color: var(--warning);
   background: var(--warning-soft);
-  padding: 3px 10px;
+  padding: 3px 9px;
   border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-feature-settings: "tnum";
+}
+
+.recent-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-sm-action {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 160ms ease;
+  cursor: pointer;
+}
+
+.btn-sm-action.primary {
+  background: var(--surface-elevated);
+  color: var(--accent);
+}
+
+.btn-sm-action.primary:hover {
+  background: var(--accent-soft);
+}
+
+.btn-sm-action.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-sm-action:active {
+  transform: scale(0.97);
 }
 
 /* Floating Toast */

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Chatible — Mobile Web App Mockup</title>
-  <link rel="stylesheet" href="css/app.css?v=6">
+  <link rel="stylesheet" href="css/app.css?v=7">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -568,48 +568,96 @@
             <span style="font-size: 11px; color: var(--warning); background: var(--warning-soft); padding: 3px 8px; border-radius: var(--radius-full); font-weight: 600;">Lưu giữ 7 ngày</span>
           </header>
 
-          <div style="padding: 12px 16px; font-size: 12.5px; color: var(--text-secondary); border-bottom: 1px solid var(--border-subtle);">
-            Các phiên chat ngẫu nhiên đã kết thúc được giữ trong 7 ngày để bạn xem lại, chặn hoặc báo cáo đối tác vi phạm.
+          <div style="padding: 8px 18px 10px 18px; font-size: 12px; color: var(--text-secondary); text-align: left; line-height: 1.4;">
+            Các phiên ngẫu nhiên được giữ 7 ngày theo D14 để bạn xem lại hoặc lấy bằng chứng báo cáo.
           </div>
 
           <div class="recent-sessions-list">
+            <!-- Card 1: Bảo Ngọc -->
             <div class="recent-card">
-              <div class="recent-header">
-                <div>
-                  <h4 style="font-size: 14.5px; font-weight: 700;">Phiên #RC-9941 • Bảo Ngọc (Nữ, 20t)</h4>
-                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Kết thúc 2 giờ trước • 18 tin nhắn</div>
+              <div class="recent-top-row">
+                <div class="recent-partner-meta">
+                  <div class="partner-avatar" style="width: 38px; height: 38px;">
+                    <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Bảo Ngọc" />
+                  </div>
+                  <div class="recent-title-wrap">
+                    <div class="recent-name-row">
+                      <span class="recent-partner-name">Bảo Ngọc</span>
+                      <span class="partner-badge">Nữ • 20t</span>
+                    </div>
+                    <div class="recent-sub-text">Phiên #RC-9941 • 18 tin nhắn</div>
+                  </div>
                 </div>
-                <span class="recent-expiry">Còn 6 ngày 22 giờ</span>
+                <span class="recent-expiry">Còn 6 ngày 22h</span>
               </div>
-              <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button class="btn-sm-ghost" style="flex: 1;" onclick="openTranscript('RC-9941', 'Bảo Ngọc', 'Nữ, 20t', 'Còn 6 ngày 22 giờ')">Xem lại tin</button>
-                <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
+              <div class="recent-card-actions">
+                <button class="btn-sm-action primary" onclick="openTranscript('RC-9941', 'Bảo Ngọc', 'Nữ, 20t', 'Còn 6 ngày 22h')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span>Xem lại tin</span>
+                </button>
+                <button class="btn-sm-action danger" onclick="openSheet(document.getElementById('sheet-report-form'))">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <span>Báo cáo / Chặn</span>
+                </button>
+              </div>
             </div>
 
+            <!-- Card 2: Quang Huy -->
             <div class="recent-card">
-              <div class="recent-header">
-                <div>
-                  <h4 style="font-size: 14.5px; font-weight: 700;">Phiên #RC-9830 • Quang Huy (Nam, 24t)</h4>
-                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Kết thúc 1 ngày trước • 42 tin nhắn</div>
+              <div class="recent-top-row">
+                <div class="recent-partner-meta">
+                  <div class="partner-avatar" style="width: 38px; height: 38px;">
+                    <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80" alt="Quang Huy" />
+                  </div>
+                  <div class="recent-title-wrap">
+                    <div class="recent-name-row">
+                      <span class="recent-partner-name">Quang Huy</span>
+                      <span class="partner-badge">Nam • 24t</span>
+                    </div>
+                    <div class="recent-sub-text">Phiên #RC-9830 • 42 tin nhắn</div>
+                  </div>
                 </div>
-                <span class="recent-expiry">Còn 5 ngày 14 giờ</span>
+                <span class="recent-expiry">Còn 5 ngày 14h</span>
               </div>
-              <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button class="btn-sm-ghost" style="flex: 1;" onclick="openTranscript('RC-9830', 'Quang Huy', 'Nam, 24t', 'Còn 5 ngày 14 giờ')">Xem lại tin</button>
-                <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
+              <div class="recent-card-actions">
+                <button class="btn-sm-action primary" onclick="openTranscript('RC-9830', 'Quang Huy', 'Nam, 24t', 'Còn 5 ngày 14h')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span>Xem lại tin</span>
+                </button>
+                <button class="btn-sm-action danger" onclick="openSheet(document.getElementById('sheet-report-form'))">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <span>Báo cáo / Chặn</span>
+                </button>
+              </div>
             </div>
 
+            <!-- Card 3: Thanh Hằng -->
             <div class="recent-card">
-              <div class="recent-header">
-                <div>
-                  <h4 style="font-size: 14.5px; font-weight: 700;">Phiên #RC-9712 • Thanh Hằng (Nữ, 22t)</h4>
-                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Kết thúc 3 ngày trước • 7 tin nhắn</div>
+              <div class="recent-top-row">
+                <div class="recent-partner-meta">
+                  <div class="partner-avatar" style="width: 38px; height: 38px;">
+                    <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Thanh Hằng" />
+                  </div>
+                  <div class="recent-title-wrap">
+                    <div class="recent-name-row">
+                      <span class="recent-partner-name">Thanh Hằng</span>
+                      <span class="partner-badge">Nữ • 22t</span>
+                    </div>
+                    <div class="recent-sub-text">Phiên #RC-9712 • 7 tin nhắn</div>
+                  </div>
                 </div>
-                <span class="recent-expiry">Còn 3 ngày 08 giờ</span>
+                <span class="recent-expiry">Còn 3 ngày 08h</span>
               </div>
-              <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button class="btn-sm-ghost" style="flex: 1;" onclick="openTranscript('RC-9712', 'Thanh Hằng', 'Nữ, 22t', 'Còn 3 ngày 08 giờ')">Xem lại tin</button>
-                <button class="btn-sm-ghost" style="color: var(--danger);" onclick="openSheet(document.getElementById('sheet-report-form'))">Báo cáo / Chặn</button>
+              <div class="recent-card-actions">
+                <button class="btn-sm-action primary" onclick="openTranscript('RC-9712', 'Thanh Hằng', 'Nữ, 22t', 'Còn 3 ngày 08h')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span>Xem lại tin</span>
+                </button>
+                <button class="btn-sm-action danger" onclick="openSheet(document.getElementById('sheet-report-form'))">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <span>Báo cáo / Chặn</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -973,6 +1021,6 @@
     <span class="toast-text">Thông báo hệ thống</span>
   </div>
 
-  <script src="js/app.js?v=6"></script>
+  <script src="js/app.js?v=7"></script>
 </body>
 </html>
