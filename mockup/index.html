@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Chatible — Mobile Web App Mockup</title>
-  <link rel="stylesheet" href="css/app.css?v=4">
+  <link rel="stylesheet" href="css/app.css?v=5">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -349,8 +349,8 @@
                     <p>Hẹn mai cafe nhé!</p>
                   </div>
                 </div>
-                <div style="text-align: right;">
-                  <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">10:24</div>
+                <div class="card-right-meta">
+                  <span class="card-time-text">10:24</span>
                   <span class="nav-badge" style="position: static; display: inline-flex;">2</span>
                 </div>
               </div>
@@ -365,7 +365,9 @@
                     <p>Oke bạn ơi, nhận được ảnh rồi</p>
                   </div>
                 </div>
-                <div style="font-size: 11px; color: var(--text-muted);">Hôm qua</div>
+                <div class="card-right-meta">
+                  <span class="card-time-text">Hôm qua</span>
+                </div>
               </div>
 
               <div class="friend-item-card" data-open-friend="F03">
@@ -378,7 +380,9 @@
                     <p>Tin nhắn gửi khi offline sẽ tự động đồng bộ</p>
                   </div>
                 </div>
-                <div style="font-size: 11px; color: var(--text-muted);">02/11</div>
+                <div class="card-right-meta">
+                  <span class="card-time-text">02/11</span>
+                </div>
               </div>
             </div>
           </div>
@@ -402,9 +406,9 @@
                     <p>[Admin] Cập nhật chính sách an toàn 18+ và mã hóa KMS...</p>
                   </div>
                 </div>
-                <div style="text-align: right;">
-                  <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Hôm nay</div>
-                  <span style="font-size: 10px; color: var(--accent); font-weight: 700;">Chỉ đọc</span>
+                <div class="card-right-meta">
+                  <span class="card-time-text">Hôm nay</span>
+                  <span class="card-status-badge">Chỉ đọc</span>
                 </div>
               </div>
 
@@ -419,8 +423,8 @@
                     <p>Trọng Hiếu: Tối nay có ai rảnh vào đàm đạo không?</p>
                   </div>
                 </div>
-                <div style="text-align: right;">
-                  <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">10:15</div>
+                <div class="card-right-meta">
+                  <span class="card-time-text">10:15</span>
                   <span class="nav-badge" style="position: static; display: inline-flex; background: #10b981;">3.2k</span>
                 </div>
               </div>
@@ -436,8 +440,8 @@
                     <p>Nhóm bảo vệ bằng mật khẩu • Yêu cầu pass để vào</p>
                   </div>
                 </div>
-                <div style="text-align: right;">
-                  <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Hôm qua</div>
+                <div class="card-right-meta">
+                  <span class="card-time-text">Hôm qua</span>
                   <span class="offline-badge" style="color: #f59e0b; background: rgba(245, 158, 11, 0.1);">128 TV</span>
                 </div>
               </div>
@@ -907,6 +911,6 @@
     <span class="toast-text">Thông báo hệ thống</span>
   </div>
 
-  <script src="js/app.js?v=4"></script>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>
