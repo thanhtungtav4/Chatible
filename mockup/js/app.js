@@ -43,6 +43,16 @@ document.addEventListener('DOMContentLoaded', () => {
     ],
     activeFriendChat: null
   };
+  // Real-time Status Bar Clock
+  function updateLiveClock() {
+    const clockEl = document.getElementById('live-status-clock');
+    if (clockEl) {
+      const now = new Date();
+      clockEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+  }
+  updateLiveClock();
+  setInterval(updateLiveClock, 30000);
 
   // Cache DOM elements
   const screens = document.querySelectorAll('.screen-view');
@@ -278,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bubble.innerHTML = `
       <div class="bubble-content">${escapeHtml(text)}</div>
-      <div class="bubble-time">${time} • Đã gửi</div>
+      <div class="bubble-time">${time} <span class="delivery-check">✓✓</span></div>
     `;
     stream.appendChild(bubble);
     stream.scrollTop = stream.scrollHeight;
@@ -569,6 +579,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Friends Real-time Search Handler
+  const friendSearchInput = document.getElementById('friends-search-input');
+  if (friendSearchInput) {
+    friendSearchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      document.querySelectorAll('.friend-item-card').forEach(card => {
+        const name = card.querySelector('h4').textContent.toLowerCase();
+        card.style.display = name.includes(q) ? 'flex' : 'none';
+      });
+    });
+  }
+
+  // Friends Filter Tabs (All vs Online)
+  document.querySelectorAll('.friend-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.friend-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const isOnlineOnly = btn.dataset.filter === 'online';
+      document.querySelectorAll('.friend-item-card').forEach(card => {
+        const isOffline = card.querySelector('.offline-badge') !== null;
+        card.style.display = (isOnlineOnly && isOffline) ? 'none' : 'flex';
+      });
+    });
+  });
+
   // Close backdrops on click
   document.querySelectorAll('.bottom-sheet-backdrop').forEach(backdrop => {
     backdrop.addEventListener('click', (e) => {
@@ -676,7 +711,13 @@ document.addEventListener('DOMContentLoaded', () => {
       bubble.querySelector('.btn-revoke-media').addEventListener('click', (e) => {
         const card = document.getElementById(mediaId);
         if (card) {
-          card.innerHTML = `<div style="padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 12px; background: #12141c;">🔒 Nội dung không còn khả dụng (Đã bị người gửi thu hồi)</div>`;
+          card.innerHTML = `
+            <div class="revoked-media-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <strong>Nội dung không còn khả dụng</strong>
+              <span>Đã bị người gửi thu hồi theo chính sách ADULT-16</span>
+            </div>
+          `;
           e.target.remove();
           showToast('Đã thu hồi quyền xem media thành công.');
         }
@@ -749,6 +790,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Interactive Audio Waveform Play/Pause Toggle
+  document.addEventListener('click', (e) => {
+    const playBtn = e.target.closest('.audio-play-btn');
+    if (playBtn) {
+      const bubble = playBtn.closest('.audio-player-bubble');
+      if (bubble) {
+        bubble.classList.toggle('playing');
+        playBtn.textContent = bubble.classList.contains('playing') ? '❚❚' : '▶';
+      }
+    }
+  });
   // Initial State: Launch into IDLE
   setChatState('IDLE');
 });
