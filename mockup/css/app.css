@@ -589,10 +589,12 @@ button {
 
 .hero-text-block {
   flex-shrink: 0;
+  text-align: center;
+  max-width: 330px;
 }
 
 .idle-hero-title {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 900;
   letter-spacing: -0.04em;
   line-height: 1.2;
@@ -605,24 +607,30 @@ button {
 }
 
 .idle-hero-desc {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.4;
-  margin: 0;
+  margin: 0 auto;
+  white-space: nowrap;
 }
 
-/* Unified Preference Card */
+/* Unified Preference Card - Ultra Refined */
 .pref-card-unified {
   width: 100%;
-  background: var(--surface-card);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px;
-  box-shadow: var(--shadow-sm);
+  background: #ffffff;
+  border-radius: 26px;
+  padding: 18px 20px;
+  box-shadow: 0 10px 30px -4px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   flex-shrink: 0;
   text-align: left;
+}
+
+[data-theme="dark"] .pref-card-unified {
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .pref-section {
@@ -636,33 +644,117 @@ button {
   background: var(--border-subtle);
 }
 
+.pref-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
 .badge-2way {
   color: var(--accent);
   font-size: 11px;
   font-weight: 800;
   background: var(--accent-soft);
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
+  white-space: nowrap;
 }
 
-.badge-age {
+.badge-age-pill {
   color: var(--accent);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
+  background: var(--accent-soft);
+  padding: 3px 12px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  font-feature-settings: "tnum";
+}
+
+/* Segmented Track for Gender */
+.gender-segmented-track {
+  display: flex;
+  background: #eef2f6;
+  border-radius: var(--radius-full);
+  padding: 4px;
+  gap: 4px;
+}
+
+[data-theme="dark"] .gender-segmented-track {
+  background: #1a2234;
+}
+
+.gender-seg-btn {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gender-seg-btn:hover {
+  color: var(--text-primary);
+}
+
+.gender-seg-btn.active {
+  background: #182232;
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(24, 34, 50, 0.25);
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .gender-seg-btn.active {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.35);
+}
+
+/* Range Slider with Dynamic Filled Track */
+.range-slider-wrapper {
+  margin-top: 6px;
+}
+
+.range-input {
+  width: 100%;
+  height: 8px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--slider-pct, 37.5%), #e2e8f0 var(--slider-pct, 37.5%), #e2e8f0 100%);
+  border-radius: var(--radius-full);
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+[data-theme="dark"] .range-input {
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--slider-pct, 37.5%), #1e2840 var(--slider-pct, 37.5%), #1e2840 100%);
 }
 
 .range-labels {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 11px;
   font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.range-hint {
   color: var(--text-secondary);
-  margin-top: 6px;
+  font-weight: 700;
+  background: var(--surface-elevated);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10.5px;
 }
-.btn-primary-big {
-  flex-shrink: 0;
-}
-/* Chatx Clean White Floating Card */
 .pref-box {
   width: 100%;
   background: var(--surface-card);

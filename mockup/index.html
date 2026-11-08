@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Chatible — Mobile Web App Mockup</title>
-  <link rel="stylesheet" href="css/app.css?v=2">
+  <link rel="stylesheet" href="css/app.css?v=3">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -117,38 +117,39 @@
               <!-- Hero Heading -->
               <div class="hero-text-block">
                 <h1 class="idle-hero-title">Kết nối với <span>Sự Ẩn Danh</span></h1>
-                <p class="idle-hero-desc">Bảo mật riêng tư Web3 • Ưu tiên mobile • Hoàn toàn 18+</p>
+                <p class="idle-hero-desc">Bảo mật riêng tư Web3 • Ưu tiên mobile • 18+</p>
               </div>
 
-              <!-- Unified Preference Card (Merge Gender + Age into one cohesive card) -->
+              <!-- Unified Preference Card (Figma Chatx Segmented Track & Filled Slider) -->
               <div class="pref-card-unified">
-                <!-- Section 1: Gender -->
+                <!-- Section 1: Gender Segmented Control -->
                 <div class="pref-section">
                   <div class="pref-label">
                     <span>Ưu tiên tìm bạn</span>
-                    <span class="badge-2way">Lọc 2 chiều</span>
+                    <span class="badge-2way">Lọc 2 chiều ⚡</span>
                   </div>
-                  <div class="chips-row">
-                    <button class="chip-btn pref-chip" data-gender="FEMALE">Nữ</button>
-                    <button class="chip-btn pref-chip" data-gender="MALE">Nam</button>
-                    <button class="chip-btn pref-chip" data-gender="OTHER">Khác</button>
-                    <button class="chip-btn pref-chip active" data-gender="ALL">Tất cả</button>
+                  <div class="gender-segmented-track">
+                    <button class="gender-seg-btn pref-chip" data-gender="FEMALE">Nữ</button>
+                    <button class="gender-seg-btn pref-chip" data-gender="MALE">Nam</button>
+                    <button class="gender-seg-btn pref-chip" data-gender="OTHER">Khác</button>
+                    <button class="gender-seg-btn pref-chip active" data-gender="ALL">Tất cả</button>
                   </div>
                 </div>
 
                 <div class="card-divider"></div>
 
-                <!-- Section 2: Age Range -->
+                <!-- Section 2: Age Range Slider -->
                 <div class="pref-section">
                   <div class="pref-label">
-                    <span>Khoảng tuổi mong muốn</span>
-                    <span id="pref-age-display" class="badge-age">18 - 30 tuổi</span>
+                    <span>Khoảng tuổi tìm kiếm</span>
+                    <span id="pref-age-display" class="badge-age-pill">18 – 30 tuổi</span>
                   </div>
                   <div class="range-slider-wrapper">
                     <input type="range" min="18" max="50" value="30" class="range-input" id="pref-age-range">
                     <div class="range-labels">
-                      <span>Tối thiểu 18 tuổi</span>
-                      <span>Mặc định 18–35</span>
+                      <span>18 tuổi</span>
+                      <span class="range-hint">Mặc định 18–35</span>
+                      <span>50+</span>
                     </div>
                   </div>
                 </div>
@@ -754,6 +755,6 @@
     <span class="toast-text">Thông báo hệ thống</span>
   </div>
 
-  <script src="js/app.js?v=2"></script>
+  <script src="js/app.js?v=3"></script>
 </body>
 </html>

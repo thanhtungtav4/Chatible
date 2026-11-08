@@ -781,13 +781,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Range Slider Age Label Update
+  // Range Slider Age Label & Dynamic Track Fill
   const ageRangeSlider = document.getElementById('pref-age-range');
   const ageRangeVal = document.getElementById('pref-age-display');
-  if (ageRangeSlider && ageRangeVal) {
-    ageRangeSlider.addEventListener('input', (e) => {
-      ageRangeVal.textContent = `18 - ${e.target.value} tuổi`;
-    });
+  function updateSliderFill() {
+    if (!ageRangeSlider) return;
+    const min = Number(ageRangeSlider.min) || 18;
+    const max = Number(ageRangeSlider.max) || 50;
+    const val = Number(ageRangeSlider.value);
+    const pct = ((val - min) / (max - min)) * 100;
+    ageRangeSlider.style.setProperty('--slider-pct', `${pct}%`);
+    if (ageRangeVal) ageRangeVal.textContent = `18 – ${val} tuổi`;
+  }
+  if (ageRangeSlider) {
+    updateSliderFill();
+    ageRangeSlider.addEventListener('input', updateSliderFill);
   }
 
   // Interactive Audio Waveform Play/Pause Toggle
