@@ -1960,3 +1960,108 @@ button {
   gap: 12px;
   max-height: 380px;
 }
+
+/* ==========================================================================
+   Groups & Channels Architecture (Broadcast, Public & Password-Protected)
+   ========================================================================== */
+
+/* 1. Group Badges */
+.group-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+}
+
+.group-type-badge.broadcast {
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+}
+
+.group-type-badge.public {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.group-type-badge.password {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+/* 2. Group Chat Author Label in Incoming Bubble */
+.group-sender-name {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent);
+  margin-bottom: 2px;
+  letter-spacing: -0.01em;
+}
+
+/* 3. Broadcast Channel Read-Only Input Notice */
+.broadcast-readonly-bar {
+  padding: 14px 18px calc(14px + var(--safe-bottom)) 18px;
+  background: var(--surface-base);
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* 4. Passcode Modal Sheet & Shake Animation */
+.passcode-input-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.passcode-field {
+  width: 100%;
+  max-width: 240px;
+  padding: 14px 18px;
+  background: var(--surface-card);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: 22px;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  letter-spacing: 0.35em;
+  text-align: center;
+  color: var(--text-primary);
+  transition: all 180ms ease;
+}
+
+.passcode-field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.passcode-field.error {
+  border-color: var(--danger);
+  animation: shakeError 0.4s ease-in-out;
+}
+
+@keyframes shakeError {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+.demo-hint-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-elevated);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}

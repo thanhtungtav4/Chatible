@@ -604,6 +604,214 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Inbox Segmented Tabs (Friends vs Groups/Channels)
+  const inboxPillFriends = document.getElementById('inbox-pill-friends');
+  const inboxPillGroups = document.getElementById('inbox-pill-groups');
+  const inboxTabFriends = document.getElementById('inbox-tab-friends');
+  const inboxTabGroups = document.getElementById('inbox-tab-groups');
+
+  if (inboxPillFriends && inboxPillGroups) {
+    inboxPillFriends.addEventListener('click', () => {
+      inboxPillFriends.classList.add('active');
+      inboxPillGroups.classList.remove('active');
+      if (inboxTabFriends) inboxTabFriends.style.display = 'flex';
+      if (inboxTabGroups) inboxTabGroups.style.display = 'none';
+    });
+
+    inboxPillGroups.addEventListener('click', () => {
+      inboxPillGroups.classList.add('active');
+      inboxPillFriends.classList.remove('active');
+      if (inboxTabGroups) inboxTabGroups.style.display = 'flex';
+      if (inboxTabFriends) inboxTabFriends.style.display = 'none';
+    });
+  }
+
+  // Groups & Channels Handlers (Broadcast, Public, Password-Protected)
+  const groupData = {
+    'G-ANNOUNCE': {
+      title: 'Kênh Thông Báo Chung',
+      subtitle: '📢 Kênh chính thức • Chỉ đọc • 12.8k người theo dõi',
+      isBroadcast: true,
+      messages: [
+        { author: 'Admin • Ban Quản Trị', role: 'admin', text: 'Chào mừng bạn đến với Chatible! Nền tảng cam kết bảo vệ dữ liệu với mã hóa Envelope qua KMS và tuân thủ nghiêm ngặt quy tắc chỉ dành cho người từ 18 tuổi trở lên.', time: '08:00' },
+        { author: 'Admin • Ban Quản Trị', role: 'admin', text: '📢 Thông báo cập nhật bản v1.1: Bổ sung tính năng Watermark động truy vết cho ảnh/video 18+ và quyền chủ động thu hồi quyền xem cho người gửi.', time: '10:00' }
+      ]
+    },
+    'G-PUBLIC': {
+      title: 'Giao lưu 18+ Toàn quốc',
+      subtitle: '🌐 Nhóm công khai • 3,240 thành viên đang hoạt động',
+      isBroadcast: false,
+      messages: [
+        { author: 'Trọng Hiếu (Hà Nội)', text: 'Chào cả nhà! Hôm nay có ai trực tuyến rảnh vào chém gió không nhỉ?', time: '10:12' },
+        { author: 'Khánh Linh (Đà Nẵng)', text: 'Chào anh Hiếu! Em vừa ghép đôi ngẫu nhiên gặp được mấy bạn dễ thương lắm!', time: '10:14' }
+      ]
+    },
+    'G-SECRET': {
+      title: 'Phòng Kín VIP',
+      subtitle: '🔒 Đã mở khóa bằng mật khẩu • 128 thành viên',
+      isBroadcast: false,
+      messages: [
+        { author: 'Minh Quân (VIP)', text: 'Chào mừng các thành viên mới đã xác thực mật khẩu vào phòng kín!', time: '09:30' },
+        { author: 'Bảo Ngọc (VIP)', text: 'Phòng này bảo mật riêng tư tuyệt đối, thảo luận thoải mái nha cả nhà 🥂', time: '09:35' }
+      ]
+    }
+  };
+
+  let activeGroupType = 'G-PUBLIC';
+
+  function openGroupChat(groupId) {
+    activeGroupType = groupId;
+    const info = groupData[groupId];
+    if (!info) return;
+
+    document.getElementById('group-chat-title').textContent = info.title;
+    document.getElementById('group-chat-subtitle').textContent = info.subtitle;
+
+    const stream = document.getElementById('group-messages-stream');
+    stream.innerHTML = '';
+
+    info.messages.forEach(m => {
+      const bubble = document.createElement('div');
+      bubble.className = 'message-bubble incoming';
+      bubble.innerHTML = `
+        <div class="bubble-content">
+          <div class="group-sender-name" style="${m.role === 'admin' ? 'color: #6366f1;' : ''}">${m.author}</div>
+          <div>${escapeHtml(m.text)}</div>
+        </div>
+        <div class="bubble-time">${m.time}</div>
+      `;
+      stream.appendChild(bubble);
+    });
+
+    const inputBar = document.getElementById('group-input-bar');
+    const readonlyNotice = document.getElementById('group-readonly-notice');
+    if (info.isBroadcast) {
+      if (inputBar) inputBar.style.display = 'none';
+      if (readonlyNotice) readonlyNotice.style.display = 'flex';
+    } else {
+      if (inputBar) inputBar.style.display = 'flex';
+      if (readonlyNotice) readonlyNotice.style.display = 'none';
+    }
+
+    switchScreen('screen-group-chat');
+  }
+
+  document.querySelectorAll('[data-open-group]').forEach(item => {
+    item.addEventListener('click', () => {
+      const gId = item.dataset.openGroup;
+      if (gId === 'G-SECRET') {
+        const passInput = document.getElementById('group-passcode-input');
+        if (passInput) {
+          passInput.value = '';
+          passInput.classList.remove('error');
+        }
+        openSheet(document.getElementById('sheet-group-passcode'));
+      } else {
+        openGroupChat(gId);
+      }
+    });
+  });
+
+  // Passcode verification for Secret Group
+  const btnSubmitPasscode = document.getElementById('btn-submit-group-passcode');
+  const passcodeInput = document.getElementById('group-passcode-input');
+
+  function verifyGroupPasscode() {
+    if (!passcodeInput) return;
+    const val = passcodeInput.value.trim();
+    if (val === '1234') {
+      closeSheet(document.getElementById('sheet-group-passcode'));
+      showToast('🔓 Mở khóa thành công! Chào mừng vào Phòng Kín VIP.');
+      openGroupChat('G-SECRET');
+    } else {
+      passcodeInput.classList.add('error');
+      showToast('❌ Mật khẩu chưa đúng. Vui lòng thử lại (demo: 1234)');
+      setTimeout(() => {
+        passcodeInput.classList.remove('error');
+      }, 1000);
+    }
+  }
+
+  if (btnSubmitPasscode) {
+    btnSubmitPasscode.addEventListener('click', verifyGroupPasscode);
+  }
+  if (passcodeInput) {
+    passcodeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        verifyGroupPasscode();
+      }
+    });
+  }
+
+  // Back from group chat
+  const btnBackFromGroupChat = document.getElementById('btn-back-from-group-chat');
+  if (btnBackFromGroupChat) {
+    btnBackFromGroupChat.addEventListener('click', () => {
+      switchScreen('screen-friends');
+    });
+  }
+
+  // Send message in group chat
+  const btnSendGroupMsg = document.getElementById('btn-send-group-msg');
+  const groupInputField = document.getElementById('group-input-text');
+
+  function handleSendGroupMessage() {
+    if (!groupInputField) return;
+    const text = groupInputField.value.trim();
+    if (!text) return;
+
+    const stream = document.getElementById('group-messages-stream');
+    if (!stream) return;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble outgoing';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    bubble.innerHTML = `
+      <div class="bubble-content">${escapeHtml(text)}</div>
+      <div class="bubble-time">${time} <span class="delivery-check">✓✓</span></div>
+    `;
+    stream.appendChild(bubble);
+    stream.scrollTop = stream.scrollHeight;
+    groupInputField.value = '';
+
+    // Simulate active group replies
+    if (activeGroupType !== 'G-ANNOUNCE') {
+      setTimeout(() => {
+        const replyBubble = document.createElement('div');
+        replyBubble.className = 'message-bubble incoming';
+        const groupResps = [
+          { author: 'Trọng Hiếu', text: 'Nhất trí bạn ơi!' },
+          { author: 'Khánh Linh', text: 'Cảm ơn bạn đã chia sẻ nhé!' },
+          { author: 'Minh Quân', text: 'Thành viên mới cần hỗ trợ gì cứ nhắn nha.' }
+        ];
+        const pick = groupResps[Math.floor(Math.random() * groupResps.length)];
+        replyBubble.innerHTML = `
+          <div class="bubble-content">
+            <div class="group-sender-name">${pick.author}</div>
+            <div>${pick.text}</div>
+          </div>
+          <div class="bubble-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+        `;
+        stream.appendChild(replyBubble);
+        stream.scrollTop = stream.scrollHeight;
+      }, 1200);
+    }
+  }
+
+  if (btnSendGroupMsg) {
+    btnSendGroupMsg.addEventListener('click', handleSendGroupMessage);
+  }
+  if (groupInputField) {
+    groupInputField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSendGroupMessage();
+      }
+    });
+  }
+
   // Close backdrops on click
   document.querySelectorAll('.bottom-sheet-backdrop').forEach(backdrop => {
     backdrop.addEventListener('click', (e) => {
