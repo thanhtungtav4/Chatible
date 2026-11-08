@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Chatible — Mobile Web App Mockup</title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -96,44 +96,56 @@
 
             <!-- 1.1 SUB-VIEW: IDLE STATE (Chatx Onboarding Style Figma Frame 1) -->
             <div class="state-idle-content" id="chat-state-idle">
-              
-              <!-- Chatx Floating Avatar Cloud Cluster -->
-              <div class="chatx-avatar-cloud">
-                <div class="cloud-avatar av1"><img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
-                <div class="cloud-avatar av2"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
-                <div class="cloud-avatar av3"><img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
-                <div class="cloud-avatar av4"><img src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
-                <div class="cloud-avatar av5"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80" alt="Avatar"/></div>
-              </div>
-
-              <h1 class="idle-hero-title">Kết nối với<br/><span>Sự Ẩn Danh</span></h1>
-              <p class="idle-hero-desc">Bảo mật quyền riêng tư tối đa, ưu tiên mobile web-app, hoàn toàn bảo vệ 18+.</p>
-
-              <!-- Preference: Target Gender -->
-              <div class="pref-box">
-                <div class="pref-label">
-                  <span>Ưu tiên tìm bạn</span>
-                  <span style="color: var(--accent);">Lọc 2 chiều</span>
+              <!-- Clean Avatar Stack & Online Badge (Figma Social Proof) -->
+              <div class="hero-avatar-cluster">
+                <div class="avatar-stack">
+                  <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Avatar"/>
+                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80" alt="Avatar"/>
+                  <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Avatar"/>
+                  <img src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=100&q=80" alt="Avatar"/>
                 </div>
-                <div class="chips-row">
-                  <button class="chip-btn pref-chip" data-gender="FEMALE">Nữ</button>
-                  <button class="chip-btn pref-chip" data-gender="MALE">Nam</button>
-                  <button class="chip-btn pref-chip" data-gender="OTHER">Khác</button>
-                  <button class="chip-btn pref-chip active" data-gender="ALL">Tất cả</button>
+                <div class="online-counter-badge">
+                  <span class="pulse-dot"></span>
+                  <span>1,420 người đang tìm</span>
                 </div>
               </div>
 
-              <!-- Preference: Age Range -->
-              <div class="pref-box">
-                <div class="pref-label">
-                  <span>Khoảng tuổi mong muốn</span>
-                  <span id="pref-age-display" style="color: var(--accent);">18 - 30 tuổi</span>
+              <!-- Hero Heading -->
+              <div class="hero-text-block">
+                <h1 class="idle-hero-title">Kết nối với <span>Sự Ẩn Danh</span></h1>
+                <p class="idle-hero-desc">Bảo mật riêng tư Web3 • Ưu tiên mobile • Hoàn toàn 18+</p>
+              </div>
+
+              <!-- Unified Preference Card (Merge Gender + Age into one cohesive card) -->
+              <div class="pref-card-unified">
+                <!-- Section 1: Gender -->
+                <div class="pref-section">
+                  <div class="pref-label">
+                    <span>Ưu tiên tìm bạn</span>
+                    <span class="badge-2way">Lọc 2 chiều</span>
+                  </div>
+                  <div class="chips-row">
+                    <button class="chip-btn pref-chip" data-gender="FEMALE">Nữ</button>
+                    <button class="chip-btn pref-chip" data-gender="MALE">Nam</button>
+                    <button class="chip-btn pref-chip" data-gender="OTHER">Khác</button>
+                    <button class="chip-btn pref-chip active" data-gender="ALL">Tất cả</button>
+                  </div>
                 </div>
-                <div class="range-slider-wrapper">
-                  <input type="range" min="18" max="50" value="30" class="range-input" id="pref-age-range">
-                  <div class="range-labels" style="margin-top: 8px;">
-                    <span style="font-size: 11px; color: var(--text-muted);">Tối thiểu 18 tuổi</span>
-                    <span style="font-size: 11px; color: var(--text-muted);">Mặc định 18–35</span>
+
+                <div class="card-divider"></div>
+
+                <!-- Section 2: Age Range -->
+                <div class="pref-section">
+                  <div class="pref-label">
+                    <span>Khoảng tuổi mong muốn</span>
+                    <span id="pref-age-display" class="badge-age">18 - 30 tuổi</span>
+                  </div>
+                  <div class="range-slider-wrapper">
+                    <input type="range" min="18" max="50" value="30" class="range-input" id="pref-age-range">
+                    <div class="range-labels">
+                      <span>Tối thiểu 18 tuổi</span>
+                      <span>Mặc định 18–35</span>
+                    </div>
                   </div>
                 </div>
               </div>

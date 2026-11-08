@@ -499,52 +499,88 @@ button {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 10px 22px 16px 22px;
-  overflow-y: auto;
+  justify-content: flex-start;
   align-items: center;
-  justify-content: center;
+  padding: 8px 18px 24px 18px;
+  overflow-y: auto;
+  gap: 12px;
   text-align: center;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Chatx Illustrated Avatar Cloud Cluster (Figma Frame 1) */
-.chatx-avatar-cloud {
-  position: relative;
-  width: 220px;
-  height: 130px;
-  margin-bottom: 20px;
-}
-
-.cloud-avatar {
-  position: absolute;
-  border-radius: var(--radius-full);
-  background: #fff;
-  border: 3px solid #fff;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+/* Chatx Social Proof Avatar Stack */
+.hero-avatar-cluster {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  overflow: hidden;
+  gap: 10px;
+  background: #ffffff;
+  padding: 5px 14px 5px 8px;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
-.cloud-avatar img {
-  width: 100%;
-  height: 100%;
+[data-theme="dark"] .hero-avatar-cluster {
+  background: var(--surface-card);
+}
+
+.avatar-stack {
+  display: flex;
+  align-items: center;
+}
+
+.avatar-stack img {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 2px solid #ffffff;
   object-fit: cover;
+  margin-left: -10px;
 }
 
-.cloud-avatar.av1 { width: 62px; height: 62px; top: 10px; left: 10px; z-index: 3; }
-.cloud-avatar.av2 { width: 72px; height: 72px; top: 0px; left: 74px; z-index: 4; border-color: var(--accent); }
-.cloud-avatar.av3 { width: 56px; height: 56px; top: 25px; left: 154px; z-index: 2; }
-.cloud-avatar.av4 { width: 48px; height: 48px; top: 75px; left: 40px; z-index: 5; }
-.cloud-avatar.av5 { width: 50px; height: 50px; top: 80px; left: 125px; z-index: 5; }
+[data-theme="dark"] .avatar-stack img {
+  border-color: var(--surface-base);
+}
+
+.avatar-stack img:first-child {
+  margin-left: 0;
+}
+
+.online-counter-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--online-green);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  animation: pulseDot 2s infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+.hero-text-block {
+  flex-shrink: 0;
+}
 
 .idle-hero-title {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 900;
   letter-spacing: -0.04em;
-  line-height: 1.22;
-  margin-bottom: 8px;
+  line-height: 1.2;
+  margin-bottom: 4px;
   color: var(--text-primary);
 }
 
@@ -553,13 +589,63 @@ button {
 }
 
 .idle-hero-desc {
-  font-size: 14px;
+  font-size: 12.5px;
   color: var(--text-secondary);
-  max-width: 290px;
-  margin-bottom: 22px;
-  line-height: 1.45;
+  line-height: 1.4;
+  margin: 0;
 }
 
+/* Unified Preference Card */
+.pref-card-unified {
+  width: 100%;
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex-shrink: 0;
+  text-align: left;
+}
+
+.pref-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.badge-2way {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--accent-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.badge-age {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+.btn-primary-big {
+  flex-shrink: 0;
+}
 /* Chatx Clean White Floating Card */
 .pref-box {
   width: 100%;
