@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Chatible</title>
+  <rect width="64" height="64" rx="18" fill="#2563eb"/>
+  <path d="M17 20.5A8.5 8.5 0 0 1 25.5 12h13A8.5 8.5 0 0 1 47 20.5v11a8.5 8.5 0 0 1-8.5 8.5H30l-8.7 7v-7.4A8.5 8.5 0 0 1 17 31.5z" fill="#fff"/>
+  <circle cx="28" cy="26" r="2.5" fill="#2563eb"/>
+  <circle cx="36" cy="26" r="2.5" fill="#2563eb"/>
+</svg>

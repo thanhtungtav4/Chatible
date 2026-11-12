@@ -84,7 +84,7 @@
                 </span>
               </div>
               <div style="display: flex; gap: 8px;">
-                <button class="icon-btn" onclick="alert('Đang bật tìm kiếm hồ sơ và tin nhắn')" title="Tìm kiếm">
+                <button class="icon-btn" id="btn-global-search" title="Tìm kiếm">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 </button>
               </div>
@@ -189,44 +189,37 @@
             <div class="chat-container" id="chat-state-chatting" style="display: none;">
               
               <!-- Partner Top Bar -->
+              <!-- Partner Top Bar (Ultra-Clean Streamlined Native Layout) -->
               <div class="chat-partner-bar">
                 <div class="partner-info">
-                  <button class="icon-btn" onclick="setChatState('IDLE')" title="Quay lại" style="width: 34px; height: 34px;">
+                  <button class="icon-btn" onclick="setChatState('IDLE')" title="Quay lại" style="width: 32px; height: 32px; flex-shrink: 0;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
                   </button>
-                  <div class="partner-avatar">
+                  <div class="partner-avatar" style="width: 38px; height: 38px; flex-shrink: 0;">
                     <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Avatar"/>
                     <span class="online-dot"></span>
                   </div>
-                  <div>
-                    <div class="partner-name-row">
-                      <span class="partner-name" id="partner-display-name">Minh Thư</span>
-                      <span class="partner-badge" id="partner-display-badge">Nữ • 21 tuổi</span>
-                    </div>
-                    <div style="font-size: 11px; color: var(--text-muted);">Phiên ngẫu nhiên #4920</div>
+                  <div class="partner-details">
+                    <div class="partner-name" id="partner-display-name">Minh Thư</div>
+                    <div class="partner-meta-sub" id="partner-display-badge">Nữ • 21 tuổi</div>
                   </div>
                 </div>
 
                 <div class="partner-actions">
-                  <!-- Media Consent Chip Button -->
-                  <button class="media-consent-chip" id="consent-media-toggle-chip">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    <span class="consent-label">Media: Tắt</span>
+                  <!-- Media Consent Icon Button with status dot -->
+                  <button class="media-toggle-icon-btn" id="consent-media-toggle-chip" title="Bật/Tắt nhận Media">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <span class="media-toggle-dot" id="consent-dot-indicator"></span>
                   </button>
 
-                  <!-- Safety Menu Button (S08) -->
-                  <button class="icon-btn danger-text" id="btn-open-safety-sheet" title="Menu An toàn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  </button>
-
-                  <!-- Next Partner Button -->
-                  <button class="icon-btn" id="btn-next-partner" title="Chuyển người khác">
+                  <!-- Next Partner Button (Chuyển người) -->
+                  <button class="icon-btn" id="btn-next-partner" title="Chuyển sang người khác" style="width: 34px; height: 34px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
                   </button>
 
-                  <!-- End Chat Button -->
-                  <button class="icon-btn" id="btn-end-chat" title="Kết thúc cuộc chat">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <!-- Safety Menu & End Chat Button (An toàn & Tùy chọn) -->
+                  <button class="icon-btn danger-text" id="btn-open-safety-sheet" title="Menu An toàn & Tùy chọn" style="width: 34px; height: 34px;">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                   </button>
                 </div>
               </div>
@@ -247,11 +240,46 @@
 
               <!-- ENDED Action Banner (Appears when chat ends) -->
               <div class="ended-bar" id="ended-action-bar" style="display: none;">
-                <p class="ended-msg">Cuộc trò chuyện đã kết thúc. Bạn có thể gửi lời mời kết bạn hoặc tìm người mới.</p>
-                <div class="ended-buttons">
-                  <button class="btn-end-action btn-next" id="btn-ended-find-new">Tìm người mới</button>
-                  <button class="btn-end-action btn-addfriend" id="btn-send-friend-request">Kết bạn</button>
-                  <button class="btn-end-action" onclick="openSheet(document.getElementById('sheet-report-form'))" style="background: var(--surface-hover); color: var(--danger);">Báo cáo</button>
+                <div class="ended-status-card">
+                  <div class="ended-header-wrap">
+                    <div class="ended-icon-pill">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      </svg>
+                      <span>Cuộc trò chuyện đã kết thúc</span>
+                    </div>
+                    <p class="ended-msg">Bạn có thể gửi lời mời kết bạn hoặc tìm người trò chuyện mới.</p>
+                  </div>
+
+                  <div class="ended-actions-group">
+                    <button class="btn-end-action btn-next btn-ended-primary" id="btn-ended-find-new">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                      </svg>
+                      <span>Tìm người mới</span>
+                    </button>
+
+                    <div class="ended-secondary-row">
+                      <button class="btn-end-action btn-addfriend btn-ended-secondary" id="btn-send-friend-request">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                          <circle cx="8.5" cy="7" r="4"/>
+                          <line x1="20" y1="8" x2="20" y2="14"/>
+                          <line x1="23" y1="11" x2="17" y2="11"/>
+                        </svg>
+                        <span>Kết bạn</span>
+                      </button>
+
+                      <button class="btn-end-action btn-ended-danger" onclick="openSheet(document.getElementById('sheet-report-form'))">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                          <line x1="12" y1="8" x2="12" y2="12"/>
+                          <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <span>Báo cáo</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -562,94 +590,146 @@
             Các phiên ngẫu nhiên được giữ 7 ngày theo D14 để bạn xem lại hoặc lấy bằng chứng báo cáo.
           </div>
 
-          <div class="recent-sessions-list">
+          <!-- Integrated Search Box with Lock Indicator for Camouflage -->
+          <div class="recent-search-row">
+            <div class="search-input-box recent-search-integrated">
+              <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="recent-search-input" placeholder="Tìm kiếm phiên..." autocomplete="off" />
+              <button class="search-suffix-lock-btn" id="btn-recent-stealth-lock" title="Khóa ngụy trang lại" style="display: none;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>Khóa</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Camouflaged / Decoy View when Stealth mode is active and locked -->
+          <div id="recent-camouflage-view" style="display: none; padding: 48px 20px; text-align: center;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--surface-hover); color: var(--text-muted); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <h4 style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px;">Không có phiên trò chuyện gần đây</h4>
+            <p style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; max-width: 290px; margin: 0 auto 18px auto;">
+              Tất cả các phiên chat ngẫu nhiên đã được tự động dọn sạch để đảm bảo quyền riêng tư.
+            </p>
+            <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); background: var(--surface-elevated); padding: 5px 12px; border-radius: var(--radius-full); border: 1px solid var(--border-subtle);">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>Nhập mã bí mật vào ô tìm kiếm để mở khóa</span>
+            </div>
+          </div>
+
+          <div class="recent-sessions-list" id="recent-real-list">
             <!-- Card 1: Bảo Ngọc -->
             <div class="recent-card">
-              <div class="recent-top-row">
-                <div class="recent-partner-meta">
-                  <div class="partner-avatar" style="width: 38px; height: 38px;">
-                    <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Bảo Ngọc" />
+              <div class="recent-card-main">
+                <div class="recent-avatar-wrap">
+                  <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Bảo Ngọc" class="recent-avatar-img" />
+                  <span class="recent-avatar-dot"></span>
+                </div>
+                <div class="recent-info-col">
+                  <div class="recent-top-line">
+                    <span class="recent-partner-name">Bảo Ngọc</span>
+                    <span class="recent-expiry">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <span>Còn 6 ngày</span>
+                    </span>
                   </div>
-                  <div class="recent-title-wrap">
-                    <div class="recent-name-row">
-                      <span class="recent-partner-name">Bảo Ngọc</span>
-                      <span class="partner-badge">Nữ • 20t</span>
-                    </div>
-                    <div class="recent-sub-text">Phiên #RC-9941 • 18 tin nhắn</div>
+                  <div class="recent-meta-line">
+                    <span class="recent-gender-tag female">Nữ • 20t</span>
+                    <span class="recent-meta-dot">•</span>
+                    <span>18 tin nhắn</span>
+                    <span class="recent-meta-dot">•</span>
+                    <span class="recent-sub-code">#9941</span>
                   </div>
                 </div>
-                <span class="recent-expiry">Còn 6 ngày 22h</span>
               </div>
+              
               <div class="recent-card-actions">
                 <button class="btn-sm-action primary" onclick="openTranscript('RC-9941', 'Bảo Ngọc', 'Nữ, 20t', 'Còn 6 ngày 22h')">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <span>Xem lại tin</span>
                 </button>
                 <button class="btn-sm-action danger" onclick="openSheet(document.getElementById('sheet-report-form'))">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                  <span>Báo cáo / Chặn</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span>Báo cáo</span>
                 </button>
               </div>
             </div>
 
             <!-- Card 2: Quang Huy -->
             <div class="recent-card">
-              <div class="recent-top-row">
-                <div class="recent-partner-meta">
-                  <div class="partner-avatar" style="width: 38px; height: 38px;">
-                    <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80" alt="Quang Huy" />
+              <div class="recent-card-main">
+                <div class="recent-avatar-wrap">
+                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80" alt="Quang Huy" class="recent-avatar-img" />
+                </div>
+                <div class="recent-info-col">
+                  <div class="recent-top-line">
+                    <span class="recent-partner-name">Quang Huy</span>
+                    <span class="recent-expiry">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <span>Còn 5 ngày</span>
+                    </span>
                   </div>
-                  <div class="recent-title-wrap">
-                    <div class="recent-name-row">
-                      <span class="recent-partner-name">Quang Huy</span>
-                      <span class="partner-badge">Nam • 24t</span>
-                    </div>
-                    <div class="recent-sub-text">Phiên #RC-9830 • 42 tin nhắn</div>
+                  <div class="recent-meta-line">
+                    <span class="recent-gender-tag male">Nam • 24t</span>
+                    <span class="recent-meta-dot">•</span>
+                    <span>42 tin nhắn</span>
+                    <span class="recent-meta-dot">•</span>
+                    <span class="recent-sub-code">#9830</span>
                   </div>
                 </div>
-                <span class="recent-expiry">Còn 5 ngày 14h</span>
               </div>
+              
               <div class="recent-card-actions">
                 <button class="btn-sm-action primary" onclick="openTranscript('RC-9830', 'Quang Huy', 'Nam, 24t', 'Còn 5 ngày 14h')">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <span>Xem lại tin</span>
                 </button>
                 <button class="btn-sm-action danger" onclick="openSheet(document.getElementById('sheet-report-form'))">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                  <span>Báo cáo / Chặn</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span>Báo cáo</span>
                 </button>
               </div>
             </div>
 
             <!-- Card 3: Thanh Hằng -->
             <div class="recent-card">
-              <div class="recent-top-row">
-                <div class="recent-partner-meta">
-                  <div class="partner-avatar" style="width: 38px; height: 38px;">
-                    <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Thanh Hằng" />
+              <div class="recent-card-main">
+                <div class="recent-avatar-wrap">
+                  <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Thanh Hằng" class="recent-avatar-img" />
+                  <span class="recent-avatar-dot"></span>
+                </div>
+                <div class="recent-info-col">
+                  <div class="recent-top-line">
+                    <span class="recent-partner-name">Thanh Hằng</span>
+                    <span class="recent-expiry">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <span>Còn 3 ngày</span>
+                    </span>
                   </div>
-                  <div class="recent-title-wrap">
-                    <div class="recent-name-row">
-                      <span class="recent-partner-name">Thanh Hằng</span>
-                      <span class="partner-badge">Nữ • 22t</span>
-                    </div>
-                    <div class="recent-sub-text">Phiên #RC-9712 • 7 tin nhắn</div>
+                  <div class="recent-meta-line">
+                    <span class="recent-gender-tag female">Nữ • 22t</span>
+                    <span class="recent-meta-dot">•</span>
+                    <span>7 tin nhắn</span>
+                    <span class="recent-meta-dot">•</span>
+                    <span class="recent-sub-code">#9712</span>
                   </div>
                 </div>
-                <span class="recent-expiry">Còn 3 ngày 08h</span>
               </div>
+              
               <div class="recent-card-actions">
                 <button class="btn-sm-action primary" onclick="openTranscript('RC-9712', 'Thanh Hằng', 'Nữ, 22t', 'Còn 3 ngày 08h')">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <span>Xem lại tin</span>
                 </button>
                 <button class="btn-sm-action danger" onclick="openSheet(document.getElementById('sheet-report-form'))">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                  <span>Báo cáo / Chặn</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span>Báo cáo</span>
                 </button>
               </div>
             </div>
-          </div>
         </section>
 
         <!-- ================================================================
@@ -752,6 +832,24 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
                   </div>
                 </div>
+
+                <div class="settings-row-divider"></div>
+
+                <div class="settings-row" onclick="openSheet(document.getElementById('sheet-camouflage-settings'))">
+                  <div class="settings-row-left">
+                    <span class="settings-icon amber">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    </span>
+                    <div>
+                      <div style="font-weight: 700;">Chế độ ngụy trang & Khóa chat</div>
+                      <div style="font-size: 11px; color: var(--text-muted);">Ẩn log chat, mở bằng passcode ô tìm kiếm</div>
+                    </div>
+                  </div>
+                  <div class="settings-row-right">
+                    <span id="camouflage-status-badge" class="badge-normal" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">Đang bật</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -801,6 +899,17 @@
       <p class="sheet-desc">Các hành động xử lý an toàn có hiệu lực ngay lập tức phía máy chủ.</p>
 
       <div class="sheet-menu-list">
+        <button class="sheet-menu-item" onclick="closeSheet(document.getElementById('sheet-safety-menu')); setChatState('ENDED');">
+          <div class="menu-item-left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <div>
+              <div class="menu-item-title danger-text">Kết thúc cuộc trò chuyện</div>
+              <div class="menu-item-sub">Dừng phiên chat hiện tại và hiển thị các tùy chọn kế tiếp</div>
+            </div>
+          </div>
+          <span>›</span>
+        </button>
+
         <button class="sheet-menu-item" id="btn-action-instant-block">
           <div class="menu-item-left">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
@@ -825,7 +934,6 @@
       </div>
     </div>
   </div>
-
   <!-- ====================================================================
        BOTTOM SHEET 2: S08 - BIỂU MẪU BÁO CÁO VI PHẠM (REPORT FORM)
        ==================================================================== -->
@@ -1146,6 +1254,49 @@
           Hủy
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       BOTTOM SHEET: CHẾ ĐỘ NGỤY TRANG & KHÓA LOG CHAT
+       ==================================================================== -->
+  <div class="bottom-sheet-backdrop" id="sheet-camouflage-settings">
+    <div class="bottom-sheet-content">
+      <div class="sheet-drag-handle"></div>
+      <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); color: #f59e0b; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      </div>
+      <h3 class="sheet-title" style="text-align: center;">Chế độ ngụy trang & Khóa chat</h3>
+      <p class="sheet-desc" style="text-align: center;">Khi kích hoạt, toàn bộ nhật ký phiên gần đây sẽ ngụy trang khi mở app. Chỉ khi nhập đúng mật mã bí mật vào ô tìm kiếm thì log chat mới hiển thị.</p>
+
+      <div style="background: var(--surface-elevated); border-radius: var(--radius-md); padding: 14px 16px; margin: 16px 0; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--border-subtle);">
+        <div>
+          <div style="font-size: 13.5px; font-weight: 700; color: var(--text-primary);">Kích hoạt ngụy trang</div>
+          <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Tự động ẩn log chat khi mở app</div>
+        </div>
+        <div class="switch-box checked" id="switch-camouflage-enabled">
+          <div class="switch-thumb"></div>
+        </div>
+      </div>
+
+      <div id="camouflage-passcode-config" style="margin-bottom: 20px; text-align: left;">
+        <label style="font-size: 13px; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 6px;">
+          Mật mã bí mật (mặc định: 8888):
+        </label>
+        <div style="position: relative;">
+          <input type="text" id="camouflage-passcode-input" class="form-input-field" value="8888" placeholder="Nhập 4–6 số/ký tự (VD: 8888)" style="font-family: var(--font-mono); font-size: 16px; letter-spacing: 2px; font-weight: 700; width: 100%; box-sizing: border-box;" />
+        </div>
+        <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 6px; line-height: 1.4;">
+          💡 <strong>Cách dùng:</strong> Nhập mã này vào ô tìm kiếm ở màn hình "Gần đây" hoặc "Bạn bè", log chat sẽ tự động lộ diện ngay tức thì!
+        </div>
+      </div>
+
+      <button class="btn-primary-big" id="btn-save-camouflage-settings" style="width: 100%;">
+        Lưu cài đặt ngụy trang
+      </button>
     </div>
   </div>
 

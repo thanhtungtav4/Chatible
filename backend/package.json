@@ -1,0 +1,44 @@
+{
+  "name": "@chatible/backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Chatible Backend API & Realtime Socket Gateway",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "dev:media-worker": "tsx src/media/media-worker.process.ts",
+    "build": "tsc",
+    "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
+    "start": "node dist/main.js",
+    "start:media-worker": "NODE_OPTIONS=--max-old-space-size=512 node dist/media/media-worker.process.js",
+    "test": "node ../scripts/run-bun.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-kms": "^3.1167.0",
+    "@aws-sdk/client-s3": "^3.1164.0",
+    "@aws-sdk/s3-request-presigner": "^3.1164.0",
+    "@chatible/shared": "workspace:*",
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/cors": "^10.0.1",
+    "@fastify/helmet": "^13.2.0",
+    "@fastify/static": "^8.0.3",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.38.3",
+    "fastify": "^5.2.1",
+    "ioredis": "^5.4.2",
+    "nodemailer": "^10.5.0",
+    "otpauth": "^9.6.0",
+    "postgres": "^3.4.5",
+    "sharp": "^0.35.5",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.2",
+    "drizzle-kit": "^0.30.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

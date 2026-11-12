@@ -1,0 +1,32 @@
+{
+  "name": "chatible-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chatible Monorepo — 1-on-1 Random Chat & Private Social Platform",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "start": "npm --workspace=backend run start",
+    "build:shared": "npm --workspace=shared run build",
+    "build": "npm run build:shared && npm --workspace=backend run build && npm --workspace=frontend run build",
+    "dev:backend": "npm --workspace=backend run dev",
+    "dev:media-worker": "npm --workspace=backend run dev:media-worker",
+    "start:media-worker": "npm --workspace=backend run start:media-worker",
+    "db:migrate": "npm --workspace=backend run db:migrate",
+    "dev:frontend": "npm --workspace=frontend run dev",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "socket.io-client": "^4.8.4",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.72.1"
+  }
+}

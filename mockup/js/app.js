@@ -41,7 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
       { id: 'F02', name: 'Tuấn Kiệt', gender: 'Nam', age: 23, online: false, lastMsg: 'Oke bạn ơi, nhận được ảnh rồi', unread: 0 },
       { id: 'F03', name: 'Mai Linh', gender: 'Nữ', age: 22, online: false, lastMsg: 'Tin nhắn gửi khi offline...', unread: 0 }
     ],
-    activeFriendChat: null
+    activeFriendChat: null,
+    camouflage: {
+      enabled: localStorage.getItem('chatx_stealth_enabled') !== 'false',
+      passcode: localStorage.getItem('chatx_stealth_pass') || '8888',
+      isUnlocked: false
+    }
   };
   // Real-time Status Bar Clock
   function updateLiveClock() {
@@ -199,8 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chatStateViews.CHATTING) chatStateViews.CHATTING.style.display = 'flex';
         if (endedBar) endedBar.style.display = 'flex';
         if (chatInputBar) {
-          chatInputBar.querySelector('.chat-input-field').disabled = true;
-          chatInputBar.querySelector('.chat-input-field').placeholder = 'Cuộc trò chuyện đã kết thúc';
+          chatInputBar.style.display = 'none';
         }
         break;
     }
@@ -468,7 +472,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnSendFriendReq) {
     btnSendFriendReq.addEventListener('click', () => {
       btnSendFriendReq.disabled = true;
-      btnSendFriendReq.textContent = 'Đã gửi lời mời kết bạn ✓';
+      btnSendFriendReq.classList.add('sent');
+      btnSendFriendReq.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span>Đã gửi lời mời</span>
+      `;
       showToast('Đã gửi lời mời kết bạn. Chờ đối phương đồng ý!');
     });
   }
@@ -1061,6 +1071,159 @@ document.addEventListener('DOMContentLoaded', () => {
       if (nameInput) nameInput.value = '';
     });
   }
+
+  // =========================================================================
+  // Camouflage & Stealth Vault Mode (Ngụy trang & Khóa log chat bằng passcode)
+  // =========================================================================
+  const recentCamouflageView = document.getElementById('recent-camouflage-view');
+  const recentRealList = document.getElementById('recent-real-list');
+  const btnRecentStealthLock = document.getElementById('btn-recent-stealth-lock');
+  const recentSearchInput = document.getElementById('recent-search-input');
+  const friendsSearchInput = document.getElementById('friends-search-input');
+  const btnGlobalSearch = document.getElementById('btn-global-search');
+  const switchCamouflage = document.getElementById('switch-camouflage-enabled');
+  const inputCamouflagePass = document.getElementById('camouflage-passcode-input');
+  const btnSaveCamouflage = document.getElementById('btn-save-camouflage-settings');
+  const badgeCamouflageStatus = document.getElementById('camouflage-status-badge');
+
+  function navigateToScreen(screenId) {
+    switchScreen(screenId);
+    navItems.forEach(n => {
+      n.classList.toggle('active', n.dataset.screen === screenId);
+    });
+  }
+
+  function updateCamouflageUI() {
+    if (switchCamouflage) {
+      switchCamouflage.classList.toggle('checked', state.camouflage.enabled);
+    }
+    if (inputCamouflagePass) {
+      inputCamouflagePass.value = state.camouflage.passcode;
+    }
+    if (badgeCamouflageStatus) {
+      badgeCamouflageStatus.textContent = state.camouflage.enabled ? 'Đang bật' : 'Đang tắt';
+      badgeCamouflageStatus.style.color = state.camouflage.enabled ? '#f59e0b' : 'var(--text-muted)';
+      badgeCamouflageStatus.style.background = state.camouflage.enabled ? 'rgba(245, 158, 11, 0.12)' : 'var(--surface-hover)';
+    }
+
+    if (!state.camouflage.enabled) {
+      // Nếu tính năng ngụy trang tắt, luôn hiển thị log chat thật
+      if (recentCamouflageView) recentCamouflageView.style.display = 'none';
+      if (recentRealList) recentRealList.style.display = 'flex';
+      if (btnRecentStealthLock) btnRecentStealthLock.style.display = 'none';
+    } else {
+      // Nếu tính năng ngụy trang bật, chỉ hiện log chat thật khi đã mở khóa
+      if (state.camouflage.isUnlocked) {
+        if (recentCamouflageView) recentCamouflageView.style.display = 'none';
+        if (recentRealList) {
+          recentRealList.style.display = 'flex';
+          recentRealList.classList.add('reveal-anim');
+        }
+        if (btnRecentStealthLock) btnRecentStealthLock.style.display = 'inline-flex';
+      } else {
+        if (recentCamouflageView) recentCamouflageView.style.display = 'block';
+        if (recentRealList) recentRealList.style.display = 'none';
+        if (btnRecentStealthLock) btnRecentStealthLock.style.display = 'none';
+      }
+    }
+  }
+
+  function checkPasscodeInSearch(inputEl, targetScreenOnUnlock) {
+    if (!inputEl) return;
+    const query = inputEl.value.trim();
+    if (!state.camouflage.enabled) return;
+
+    if (query === state.camouflage.passcode) {
+      inputEl.value = '';
+      state.camouflage.isUnlocked = true;
+      updateCamouflageUI();
+      showToast('🔓 Mở khóa thành công! Nhật ký trò chuyện đã sẵn sàng.');
+      if (targetScreenOnUnlock && state.currentScreen !== targetScreenOnUnlock) {
+        navigateToScreen(targetScreenOnUnlock);
+      }
+    }
+  }
+
+  if (recentSearchInput) {
+    recentSearchInput.addEventListener('input', () => {
+      checkPasscodeInSearch(recentSearchInput);
+      if (state.camouflage.isUnlocked && recentRealList) {
+        const q = recentSearchInput.value.toLowerCase().trim();
+        const cards = recentRealList.querySelectorAll('.recent-card');
+        cards.forEach(card => {
+          const text = card.textContent.toLowerCase();
+          card.style.display = text.includes(q) ? 'block' : 'none';
+        });
+      }
+    });
+
+    recentSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        checkPasscodeInSearch(recentSearchInput);
+      }
+    });
+  }
+
+  if (friendsSearchInput) {
+    friendsSearchInput.addEventListener('input', () => {
+      checkPasscodeInSearch(friendsSearchInput, 'screen-recent');
+    });
+    friendsSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        checkPasscodeInSearch(friendsSearchInput, 'screen-recent');
+      }
+    });
+  }
+
+  if (btnGlobalSearch) {
+    btnGlobalSearch.addEventListener('click', () => {
+      const pin = prompt('🔍 Nhập từ khóa tìm kiếm hoặc mật mã ngụy trang để mở khóa:');
+      if (pin && pin.trim() === state.camouflage.passcode) {
+        state.camouflage.isUnlocked = true;
+        updateCamouflageUI();
+        navigateToScreen('screen-recent');
+        showToast('🔓 Mở khóa thành công! Nhật ký trò chuyện đã sẵn sàng.');
+      } else if (pin) {
+        showToast('Không tìm thấy nội dung phù hợp.');
+      }
+    });
+  }
+
+  if (btnRecentStealthLock) {
+    btnRecentStealthLock.addEventListener('click', () => {
+      state.camouflage.isUnlocked = false;
+      updateCamouflageUI();
+      showToast('🔒 Đã khóa & ngụy trang lại nhật ký trò chuyện.');
+    });
+  }
+
+  if (switchCamouflage) {
+    switchCamouflage.addEventListener('click', () => {
+      switchCamouflage.classList.toggle('checked');
+    });
+  }
+
+  if (btnSaveCamouflage) {
+    btnSaveCamouflage.addEventListener('click', () => {
+      const isChecked = switchCamouflage ? switchCamouflage.classList.contains('checked') : true;
+      const newPass = inputCamouflagePass && inputCamouflagePass.value.trim() ? inputCamouflagePass.value.trim() : '8888';
+
+      state.camouflage.enabled = isChecked;
+      state.camouflage.passcode = newPass;
+      state.camouflage.isUnlocked = false;
+
+      localStorage.setItem('chatx_stealth_enabled', isChecked ? 'true' : 'false');
+      localStorage.setItem('chatx_stealth_pass', newPass);
+
+      updateCamouflageUI();
+      closeSheet(document.getElementById('sheet-camouflage-settings'));
+      showToast(isChecked ? `🛡 Đã lưu cài đặt ngụy trang (Mật mã: ${newPass})` : 'Đã tắt chế độ ngụy trang.');
+    });
+  }
+
+  // Cập nhật giao diện ngụy trang ngay khi khởi chạy
+  updateCamouflageUI();
   // Initial State: Launch into IDLE
   setChatState('IDLE');
 });
