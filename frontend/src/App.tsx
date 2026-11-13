@@ -10,6 +10,8 @@ const GroupsView = lazy(() => import('./features/groups/GroupsView.js').then((m)
 const RecentSessionsView = lazy(() => import('./features/sessions/RecentSessionsView.js').then((m) => ({ default: m.RecentSessionsView })));
 const ProfileView = lazy(() => import('./features/profile/ProfileView.js').then((m) => ({ default: m.ProfileView })));
 const ReportModal = lazy(() => import('./features/safety/ReportModal.js').then((m) => ({ default: m.ReportModal })));
+const PrivacyPolicyView = lazy(() => import('./features/legal/PrivacyPolicyView.js').then((m) => ({ default: m.PrivacyPolicyView })));
+const TermsOfServiceView = lazy(() => import('./features/legal/TermsOfServiceView.js').then((m) => ({ default: m.TermsOfServiceView })));
 
 type UserProfile = AuthResponse['profile'];
 type ReportRequest = {
@@ -20,6 +22,7 @@ type ReportRequest = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'friends' | 'groups' | 'recent' | 'profile'>('chat');
+  const [currentPath, setCurrentPath] = useState(() => (typeof window !== 'undefined' ? window.location.pathname : '/'));
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [pendingReport, setPendingReport] = useState<ReportRequest | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -29,6 +32,19 @@ export default function App() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifDialogRef = useRef<HTMLDialogElement>(null);
   const notifHeadingId = useId();
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+  };
 
   useEffect(() => {
     const dialog = notifDialogRef.current;
@@ -130,8 +146,24 @@ export default function App() {
     setPendingReport(request);
   };
 
+  if (currentPath === '/privacy') {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#0B0F19] text-slate-400 flex items-center justify-center text-sm">Đang tải...</div>}>
+        <PrivacyPolicyView onBack={() => navigateTo('/')} />
+      </Suspense>
+    );
+  }
+
+  if (currentPath === '/terms') {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#0B0F19] text-slate-400 flex items-center justify-center text-sm">Đang tải...</div>}>
+        <TermsOfServiceView onBack={() => navigateTo('/')} />
+      </Suspense>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#e2e8f0] p-0 md:p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#e2e8f0] p-0 md:p-6">
       <div className="relative flex h-[100dvh] w-full max-w-[420px] flex-col overflow-hidden bg-white shadow-2xl md:h-[860px] md:rounded-[48px] md:border-[10px] md:border-[#1e293b]">
         <div aria-hidden="true" className="pointer-events-none hidden md:block absolute left-1/2 top-3 z-50 h-7 w-28 -translate-x-1/2 rounded-full bg-black" />
         <header className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3 md:px-5 md:pt-7">
@@ -372,6 +404,32 @@ export default function App() {
           )}
         </dialog>
       </div>
+
+      <footer className="mt-3 hidden md:flex items-center gap-4 text-xs text-slate-500">
+        <span>© 2026 Chatible</span>
+        <span>•</span>
+        <a
+          href="/terms"
+          onClick={(e) => {
+            e.preventDefault();
+            navigateTo('/terms');
+          }}
+          className="hover:text-slate-800 underline transition-colors"
+        >
+          Điều khoản sử dụng
+        </a>
+        <span>•</span>
+        <a
+          href="/privacy"
+          onClick={(e) => {
+            e.preventDefault();
+            navigateTo('/privacy');
+          }}
+          className="hover:text-slate-800 underline transition-colors"
+        >
+          Chính sách quyền riêng tư
+        </a>
+      </footer>
     </div>
   );
 }

@@ -726,7 +726,25 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                     className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
                   />
                   <label htmlFor={fieldId('google-policy')} className="cursor-pointer">
-                    Tôi xác nhận đủ 18 tuổi và đồng ý với Điều khoản sử dụng của Chatible.
+                    Tôi xác nhận đủ 18 tuổi và đồng ý với{' '}
+                    <a
+                      href="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 font-semibold underline hover:text-blue-700"
+                    >
+                      Điều khoản
+                    </a>{' '}
+                    và{' '}
+                    <a
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 font-semibold underline hover:text-blue-700"
+                    >
+                      Chính sách 18+
+                    </a>{' '}
+                    của Chatible.
                   </label>
                 </div>
 
@@ -873,7 +891,25 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                       className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <label htmlFor={fieldId('auth-policy')} className="cursor-pointer">
-                      Tôi xác nhận đủ 18 tuổi và đồng ý với Điều khoản sử dụng của Chatible.
+                      Tôi xác nhận đủ 18 tuổi và đồng ý với{' '}
+                      <a
+                        href="/terms"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 font-semibold underline hover:text-blue-700"
+                      >
+                        Điều khoản
+                      </a>{' '}
+                      và{' '}
+                      <a
+                        href="/privacy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 font-semibold underline hover:text-blue-700"
+                      >
+                        Chính sách 18+
+                      </a>{' '}
+                      của Chatible.
                     </label>
                   </div>
                 )}

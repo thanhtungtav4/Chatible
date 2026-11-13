@@ -886,6 +886,25 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
                 Watermark động kèm token định danh và quyền xem media 5 phút là biện pháp răn đe kỹ thuật. Hệ thống không thể ngăn chặn tuyệt đối trường hợp đối phương sử dụng thiết bị ghi hình ngoại vi chụp lại màn hình.
               </p>
             </div>
+
+            <div className="flex flex-wrap gap-4 pt-2 text-xs">
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 font-semibold underline hover:text-blue-700"
+              >
+                Xem chi tiết Điều khoản dịch vụ →
+              </a>
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 font-semibold underline hover:text-blue-700"
+              >
+                Xem chi tiết Chính sách quyền riêng tư →
+              </a>
+            </div>
           </div>
         )}
       </section>
