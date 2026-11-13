@@ -1091,7 +1091,6 @@ export class AdminService {
   }
 
   async getAdminMfaStatus(): Promise<{ enabled: boolean; source: 'env' | 'db' | 'none' }> {
-    if (config.adminTotpSecret) return { enabled: true, source: 'env' };
     const stored = await this.getStoredTotpSecret();
     return { enabled: stored.enabled, source: stored.enabled ? 'db' : 'none' };
   }
