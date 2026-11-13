@@ -256,6 +256,50 @@ export function RecentSessionsView({ onOpenChat, onOpenReport }: RecentSessionsV
     void loadStealthConfig();
   }, [loadStealthConfig]);
 
+  // Tự động khóa lại & ngụy trang ngay khi tắt màn hình, chuyển tab hoặc rời khỏi trang
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden' && isStealthMode && isUnlocked) {
+        setIsUnlocked(false);
+        setPinInput('');
+        setSessions([]);
+        setSessionMessages({});
+        setExpandedSessionId(null);
+        void apiFetch('/api/v1/users/me/stealth-vault/lock', {
+          method: 'POST',
+          keepalive: true,
+        }).catch(() => undefined);
+      }
+    };
+
+    const handlePageHide = () => {
+      if (isStealthMode && isUnlocked) {
+        setIsUnlocked(false);
+        setPinInput('');
+        setSessions([]);
+        setSessionMessages({});
+        setExpandedSessionId(null);
+        void apiFetch('/api/v1/users/me/stealth-vault/lock', {
+          method: 'POST',
+          keepalive: true,
+        }).catch(() => undefined);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+      if (isStealthMode && isUnlocked) {
+        void apiFetch('/api/v1/users/me/stealth-vault/lock', {
+          method: 'POST',
+          keepalive: true,
+        }).catch(() => undefined);
+      }
+    };
+  }, [isStealthMode, isUnlocked]);
+
   useEffect(() => {
     if (!isStealthLoading && !stealthConfigError && (!isStealthMode || isUnlocked)) {
       void loadSessions();

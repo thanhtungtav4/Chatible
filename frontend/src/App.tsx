@@ -1,13 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AuthResponse, UserNotificationDto } from '@chatible/shared';
-import { Bell, CheckCheck, Clock3, Download, MessageSquare, MessagesSquare, ShieldAlert, Smartphone, User, UsersRound, X } from 'lucide-react';
+import { Bell, CheckCheck, Clock3, Download, EyeOff, MessageSquare, MessagesSquare, ShieldAlert, Smartphone, User, UsersRound, X } from 'lucide-react';
 import { apiFetch } from './api.js';
 import { AuthModal } from './features/auth/AuthModal.js';
 import { ChatEngine } from './features/chat/ChatEngine.js';
-import { syncStealthState, triggerPushNotification } from './features/notifications/pushNotification.js';
+import { getLocalStealthMode, syncStealthState, triggerPushNotification } from './features/notifications/pushNotification.js';
 import { usePwaInstall } from './features/pwa/usePwaInstall.js';
 import { PwaInstallModal } from './features/pwa/PwaInstallModal.js';
 import { triggerHaptic } from './features/mobile/haptic.js';
+import { StealthCamouflageScreen } from './features/security/StealthCamouflageScreen.js';
 
 const FriendsView = lazy(() => import('./features/friends/FriendsView.js').then((m) => ({ default: m.FriendsView })));
 const GroupsView = lazy(() => import('./features/groups/GroupsView.js').then((m) => ({ default: m.GroupsView })));
@@ -34,6 +35,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<UserNotificationDto[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isStealthLocked, setIsStealthLocked] = useState(false);
   const notifDialogRef = useRef<HTMLDialogElement>(null);
   const notifHeadingId = useId();
   const knownNotifIdsRef = useRef<Set<string> | null>(null);
@@ -51,6 +53,32 @@ export default function App() {
     window.history.pushState({}, '', path);
     setCurrentPath(path);
   };
+
+  // Bảo vệ riêng tư Stealth Vault: Khi tắt màn hình, chuyển tab hoặc rời ứng dụng -> Tự động kích hoạt Ngụy trang an toàn
+  useEffect(() => {
+    const lockStealthSafety = () => {
+      if (getLocalStealthMode() && userProfile) {
+        setIsStealthLocked(true);
+        void apiFetch('/api/v1/users/me/stealth-vault/lock', {
+          method: 'POST',
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        lockStealthSafety();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', lockStealthSafety);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', lockStealthSafety);
+    };
+  }, [userProfile]);
 
   useEffect(() => {
     const dialog = notifDialogRef.current;
@@ -193,6 +221,15 @@ export default function App() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#e2e8f0] p-0 md:p-6">
       <div className="relative flex h-[100dvh] w-full max-w-[420px] flex-col overflow-hidden bg-white shadow-2xl md:h-[860px] md:rounded-[48px] md:border-[10px] md:border-[#1e293b]">
         <div aria-hidden="true" className="pointer-events-none hidden md:block absolute left-1/2 top-3 z-50 h-7 w-28 -translate-x-1/2 rounded-full bg-black" />
+
+        {/* Màn hình Ngụy trang Toàn diện (Ghi chú an toàn) khi bật Stealth Mode & tắt màn hình / chuyển tab */}
+        {isStealthLocked && getLocalStealthMode() && userProfile && (
+          <StealthCamouflageScreen
+            onUnlock={() => {
+              setIsStealthLocked(false);
+            }}
+          />
+        )}
         <header
           className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3 md:px-5 md:pt-7"
           style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))' }}
@@ -217,6 +254,24 @@ export default function App() {
                   className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition active:scale-95"
                 >
                   <Download size={18} aria-hidden="true" />
+                </button>
+              )}
+              {getLocalStealthMode() && (
+                <button
+                  type="button"
+                  aria-label="Khóa ngụy trang ngay"
+                  onClick={() => {
+                    triggerHaptic('selection');
+                    setIsStealthLocked(true);
+                    void apiFetch('/api/v1/users/me/stealth-vault/lock', {
+                      method: 'POST',
+                      keepalive: true,
+                    }).catch(() => {});
+                  }}
+                  title="Kích hoạt ngụy trang ngay lập tức (Ghi chú an toàn)"
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100 transition active:scale-95"
+                >
+                  <EyeOff size={18} aria-hidden="true" />
                 </button>
               )}
               <button
