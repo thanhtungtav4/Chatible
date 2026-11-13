@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, boolean, index } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { chatSessions } from './sessions.js';
 import { communityRooms } from './groups.js';
@@ -44,3 +44,18 @@ export const restrictionAppeals = pgTable('restriction_appeals', {
   reviewedBy: uuid('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
   adminNote: text('admin_note'),
 });
+
+export const userNotifications = pgTable(
+  'user_notifications',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    type: varchar('type', { length: 50 }).notNull(), // REPORT_RESOLVED, ACCOUNT_RESTRICTED, APPEAL_DECISION, SYSTEM
+    title: varchar('title', { length: 160 }).notNull(),
+    body: text('body').notNull(),
+    relatedResourceId: uuid('related_resource_id'),
+    isRead: boolean('is_read').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_user_notifications_user_created').on(table.userId, table.createdAt)]
+);

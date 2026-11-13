@@ -13,7 +13,10 @@ sharp.concurrency(1);
 export const MAX_IMAGE_WIDTH = 4096;
 export const MAX_IMAGE_HEIGHT = 4096;
 export const MAX_IMAGE_INPUT_PIXELS = 16_777_216; // 4096 * 4096 (~16.7 MP)
-export const MAX_IMAGE_OUTPUT_EDGE = 2048;
+const parsedOutputEdge = Number.parseInt(process.env.WATERMARK_IMAGE_MAX_EDGE || '2048', 10);
+export const MAX_IMAGE_OUTPUT_EDGE = Number.isFinite(parsedOutputEdge)
+  ? Math.max(512, Math.min(2048, parsedOutputEdge))
+  : 2048;
 
 export class SharpProcessingSemaphore {
   private active = 0;

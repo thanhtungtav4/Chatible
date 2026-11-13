@@ -10,7 +10,9 @@
     "build": "tsc",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
     "start": "node dist/main.js",
-    "start:media-worker": "NODE_OPTIONS=--max-old-space-size=512 node dist/media/media-worker.process.js",
+    "start:lowmem": "NODE_OPTIONS=--max-old-space-size=256 node dist/main.js",
+    "start:media-worker": "NODE_OPTIONS=--max-old-space-size=256 node dist/media/media-worker.process.js",
+    "start:media-worker:lowmem": "NODE_OPTIONS=--max-old-space-size=192 node dist/media/media-worker.process.js",
     "test": "node ../scripts/run-bun.mjs",
     "typecheck": "tsc --noEmit"
   },

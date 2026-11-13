@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { io } from 'socket.io-client';
 import { SocketEvents, type MessageType } from '@chatible/shared';
 import {
-  AlertTriangle,
+  ArrowDown,
   ArrowLeft,
   Ban,
   Check,
-  Eye,
   Flame,
   ImagePlus,
   MessageCircle,
@@ -21,13 +20,12 @@ import {
   X,
 } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '../../api.js';
-import { AudioRecorder } from '../media/audio-recorder.js';
-import { ImageCompressor } from '../media/image-compressor.js';
-import {
-  fetchDecryptedMediaView,
-  revokeMediaAsset,
-  uploadAndFinalizeEncryptedMedia,
-} from '../media/encryptedMediaClient.js';
+import { AdultReceiveConsentModal, AdultSenderCommitmentsModal } from '../media/AdultConsentModals.js';
+import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
+import { parseSessionMediaPayload, type SessionMediaMeta } from '../media/mediaPreviewLifecycle.js';
+import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionMedia.js';
+import { useSmartAutoScroll } from '../chat/useSmartAutoScroll.js';
+import { mergeFriendMessages, type OrderedFriendMessage } from './friendMessageOrder.js';
 
 type Friend = {
   id: string;
@@ -48,26 +46,9 @@ type IncomingFriendRequest = {
   sentAt: string;
 };
 
-type FriendMediaMeta = {
-  mediaId: string;
-  contentType: string;
-  mediaType: 'IMAGE' | 'AUDIO' | 'VIDEO';
-  waveform?: number[];
-  durationSec?: number;
-  width?: number;
-  height?: number;
-  isAdult?: boolean;
-};
+type FriendMediaMeta = SessionMediaMeta;
 
-type FriendMediaViewState = {
-  previewUrl?: string;
-  watermarkText?: string;
-  watermarkedMode?: 'embedded' | 'overlay';
-  revoked?: boolean;
-};
-
-type FriendMessage = {
-  id: string;
+type FriendMessage = OrderedFriendMessage & {
   sessionId?: string;
   senderId: string;
   receiverId: string;
@@ -75,7 +56,6 @@ type FriendMessage = {
   content: string;
   metadata?: unknown;
   isAdultContent?: boolean;
-  sentAt: string;
   expiresAt: string;
 };
 
@@ -86,43 +66,7 @@ type FriendsViewProps = {
 function parseFriendMedia(message: FriendMessage): FriendMediaMeta | undefined {
   const mType = message.messageType;
   if (mType !== 'IMAGE' && mType !== 'AUDIO' && mType !== 'VIDEO') return undefined;
-  try {
-    const parsed: unknown = JSON.parse(message.content);
-    if (!parsed || typeof parsed !== 'object') return undefined;
-    const value = parsed as Record<string, unknown>;
-    if (
-      typeof value.mediaId !== 'string' ||
-      !value.mediaId ||
-      typeof value.contentType !== 'string' ||
-      !/^(image|audio|video)\/[a-z0-9.+-]+$/i.test(value.contentType)
-    ) {
-      return undefined;
-    }
-    const waveform =
-      Array.isArray(value.waveform) &&
-      value.waveform.length === 30 &&
-      value.waveform.every((s) => typeof s === 'number' && Number.isFinite(s) && s >= 0 && s <= 1)
-        ? (value.waveform as number[])
-        : undefined;
-    const durationSec =
-      typeof value.durationSec === 'number' && Number.isFinite(value.durationSec) && value.durationSec >= 0
-        ? value.durationSec
-        : undefined;
-    const width = Number.isSafeInteger(value.width) && (value.width as number) > 0 ? (value.width as number) : undefined;
-    const height = Number.isSafeInteger(value.height) && (value.height as number) > 0 ? (value.height as number) : undefined;
-    return {
-      mediaId: value.mediaId,
-      contentType: value.contentType,
-      mediaType: mType,
-      isAdult: Boolean(message.isAdultContent || value.isAdult === true),
-      ...(waveform ? { waveform } : {}),
-      ...(durationSec !== undefined ? { durationSec } : {}),
-      ...(width !== undefined ? { width } : {}),
-      ...(height !== undefined ? { height } : {}),
-    };
-  } catch {
-    return undefined;
-  }
+  return parseSessionMediaPayload(message.content, mType, Boolean(message.isAdultContent));
 }
 
 async function readApi<T>(response: Response): Promise<T> {
@@ -154,9 +98,24 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     friendName: string;
   } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const {
+    scrollContainerRef,
+    endRef: messagesEndRef,
+    handleScroll: handleMessagesScroll,
+    unreadBelowCount,
+    showNewMessageButton,
+    scrollToBottom,
+  } = useSmartAutoScroll({
+    itemCount: messages.length,
+    resetKey: selectedFriendId,
+    tailKey: messages[messages.length - 1]?.id ?? null,
+  });
   const [isFriendsLoading, setIsFriendsLoading] = useState(true);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [olderMessagesError, setOlderMessagesError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [acceptingRequestId, setAcceptingRequestId] = useState<string | null>(null);
   const [decliningRequestId, setDecliningRequestId] = useState<string | null>(null);
@@ -164,46 +123,53 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [mediaConsent, setMediaConsent] = useState(false);
-  const [partnerMediaConsent, setPartnerMediaConsent] = useState(false);
-  const [myAdultConsent, setMyAdultConsent] = useState(false);
-  const [partnerAdultConsent, setPartnerAdultConsent] = useState(false);
-  const [showAdultConsentModal, setShowAdultConsentModal] = useState(false);
-  const [adultPolicyAck, setAdultPolicyAck] = useState(false);
-  const [sendAsAdult, setSendAsAdult] = useState(false);
-  const [showSenderAdultModal, setShowSenderAdultModal] = useState(false);
-  const [senderConfirm18Plus, setSenderConfirm18Plus] = useState(false);
-  const [senderConfirmConsent, setSenderConfirmConsent] = useState(false);
-  const [pendingMediaFile, setPendingMediaFile] = useState<File | null>(null);
-  const [pendingMediaType, setPendingMediaType] = useState<'IMAGE' | 'VIDEO' | null>(null);
-  const [mediaBusy, setMediaBusy] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [mediaViews, setMediaViews] = useState<Record<string, FriendMediaViewState>>({});
-  const mediaInputRef = useRef<HTMLInputElement | null>(null);
-  const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const previewUrlsRef = useRef(new Map<string, string>());
-  const previewTimeoutsRef = useRef(new Map<string, number>());
   const selectedFriendIdRef = useRef<string | null>(null);
   const messagesRef = useRef<FriendMessage[]>([]);
+  const pendingScrollRestoreRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(null);
+  const isLoadingOlderRef = useRef(false);
 
   selectedFriendIdRef.current = selectedFriendId;
   messagesRef.current = messages;
 
-  const clearMediaPreview = useCallback((messageId: string) => {
-    const timeoutId = previewTimeoutsRef.current.get(messageId);
-    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    previewTimeoutsRef.current.delete(messageId);
-    const url = previewUrlsRef.current.get(messageId);
-    if (url) URL.revokeObjectURL(url);
-    previewUrlsRef.current.delete(messageId);
-  }, []);
+  const sendFriendMediaMessage = useCallback(
+    async ({ media, isAdult }: { media: UploadedSessionMedia; isAdult: boolean }) => {
+      const friendId = selectedFriendIdRef.current;
+      if (!friendId) {
+        throw new Error('Phiên trò chuyện bạn bè chưa sẵn sàng.');
+      }
+      const response = await apiFetch(`/api/v1/friends/${encodeURIComponent(friendId)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: media.mediaType,
+          content: JSON.stringify(media),
+          mediaId: media.mediaId,
+          isAdultContent: isAdult,
+          metadata: media,
+          clientMessageId: crypto.randomUUID(),
+        }),
+      });
+      const message = await readApi<FriendMessage>(response);
+      if (selectedFriendIdRef.current === friendId) {
+        setMessages((current) => mergeFriendMessages(current, [message]));
+      }
+    },
+    []
+  );
 
-  const clearAllMediaPreviews = useCallback(() => {
-    for (const key of Array.from(previewUrlsRef.current.keys())) {
-      clearMediaPreview(key);
-    }
-    setMediaViews({});
-  }, [clearMediaPreview]);
+  const sessionMedia = useSessionMedia({
+    sessionId: activeSessionId,
+    recipientId: selectedFriendId,
+    canSend: Boolean(selectedFriendId && activeSessionId),
+    voiceFilenamePrefix: 'friend-voice',
+    partnerNotAdultConsentMessage: 'Bạn bè chưa bật quyền "Nhận nội dung 18+" trong luồng chat này.',
+    fileTooLargeMessage: () => 'Dung lượng tệp vượt quá giới hạn cho phép.',
+    onSendMediaMessage: sendFriendMediaMessage,
+    onError: setMessageError,
+  });
+
+  const mediaHandlersRef = useRef(sessionMedia);
+  mediaHandlersRef.current = sessionMedia;
 
   const selectedFriend = useMemo(
     () => friends.find((friend) => friend.userId === selectedFriendId) || null,
@@ -215,10 +181,6 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     if (!q) return friends;
     return friends.filter((f) => f.nickname.toLowerCase().includes(q));
   }, [friends, searchQuery]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const loadFriends = useCallback(async () => {
     setIsFriendsLoading(true);
@@ -259,79 +221,55 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       const activeFriend = selectedFriendIdRef.current;
       if (!activeFriend) return;
       if (incoming.senderId !== activeFriend && incoming.receiverId !== activeFriend) return;
-      setMessages((current) => (current.some((m) => m.id === incoming.id) ? current : [...current, incoming]));
+      setMessages((current) => mergeFriendMessages(current, [incoming]));
     });
     socket.on(SocketEvents.MEDIA_REVOKED, (payload: { mediaId?: string }) => {
       if (!payload?.mediaId) return;
-      const matchingIds = messagesRef.current
-        .filter((msg) => parseFriendMedia(msg)?.mediaId === payload.mediaId)
-        .map((msg) => msg.id);
-      if (matchingIds.length === 0) return;
-      for (const msgId of matchingIds) clearMediaPreview(msgId);
-      setMediaViews((prev) => {
-        const next = { ...prev };
-        for (const msgId of matchingIds) {
-          next[msgId] = { ...(prev[msgId] || {}), revoked: true, previewUrl: undefined };
-        }
-        return next;
-      });
+      mediaHandlersRef.current.markMediaRevoked(
+        payload.mediaId,
+        messagesRef.current.map((msg) => ({ messageId: msg.id, mediaId: parseFriendMedia(msg)?.mediaId }))
+      );
     });
     return () => {
       socket.disconnect();
-      void audioRecorderRef.current?.cancel();
-      audioRecorderRef.current = null;
-      clearAllMediaPreviews();
     };
-  }, [clearAllMediaPreviews, clearMediaPreview]);
+  }, []);
 
   useEffect(() => {
     if (!selectedFriendId) {
       setMessages([]);
       setActiveSessionId(null);
-      setMediaConsent(false);
-      setPartnerMediaConsent(false);
-      setMyAdultConsent(false);
-      setPartnerAdultConsent(false);
-      setSendAsAdult(false);
-      clearAllMediaPreviews();
       return;
     }
     let isCurrent = true;
     setIsMessagesLoading(true);
+    setIsLoadingOlder(false);
+    isLoadingOlderRef.current = false;
+    pendingScrollRestoreRef.current = null;
     setMessageError(null);
+    setOlderMessagesError(null);
     setMessages([]);
-    clearAllMediaPreviews();
+    setNextCursor(null);
+    setHasMoreMessages(false);
+    setActiveSessionId(null);
 
     void Promise.all([
       apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/session`).then((r) =>
         readApi<{ sessionId: string; myAdultConsent: boolean; partnerAdultConsent: boolean }>(r)
       ),
-      apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/messages`).then((r) =>
-        readApi<{ messages?: FriendMessage[] }>(r)
+      apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/messages?limit=40`).then((r) =>
+        readApi<{ messages?: FriendMessage[]; nextCursor?: string | null; hasMore?: boolean }>(r)
       ),
     ])
-      .then(async ([sessionInfo, data]) => {
+      .then(([sessionInfo, data]) => {
         if (!isCurrent) return;
         setActiveSessionId(sessionInfo.sessionId);
-        setMyAdultConsent(sessionInfo.myAdultConsent);
-        setPartnerAdultConsent(sessionInfo.partnerAdultConsent);
-        setMessages(Array.isArray(data.messages) ? data.messages : []);
-
-        const consentRes = await apiFetch(
-          `/api/v1/media/consent/${encodeURIComponent(sessionInfo.sessionId)}`
-        ).catch(() => null);
-        if (consentRes && consentRes.ok && isCurrent) {
-          const state = (await consentRes.json()) as {
-            myMediaConsent?: boolean;
-            partnerMediaConsent?: boolean;
-            myAdultConsent?: boolean;
-            partnerAdultConsent?: boolean;
-          };
-          setMediaConsent(Boolean(state.myMediaConsent));
-          setPartnerMediaConsent(Boolean(state.partnerMediaConsent));
-          setMyAdultConsent(Boolean(state.myAdultConsent));
-          setPartnerAdultConsent(Boolean(state.partnerAdultConsent));
-        }
+        mediaHandlersRef.current.setMyAdultConsent(sessionInfo.myAdultConsent);
+        mediaHandlersRef.current.setPartnerAdultConsent(sessionInfo.partnerAdultConsent);
+        const fetched = Array.isArray(data.messages) ? data.messages : [];
+        setMessages((current) => mergeFriendMessages(current, fetched));
+        setNextCursor(typeof data.nextCursor === 'string' ? data.nextCursor : null);
+        setHasMoreMessages(Boolean(data.hasMore && data.nextCursor));
       })
       .catch((requestError: unknown) => {
         if (isCurrent) setMessageError(requestError instanceof Error ? requestError.message : 'Không thể tải cuộc trò chuyện.');
@@ -342,7 +280,67 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     return () => {
       isCurrent = false;
     };
-  }, [clearAllMediaPreviews, selectedFriendId]);
+  }, [selectedFriendId]);
+
+  useLayoutEffect(() => {
+    const restore = pendingScrollRestoreRef.current;
+    const container = scrollContainerRef.current;
+    if (!restore || !container) return;
+    pendingScrollRestoreRef.current = null;
+    const delta = container.scrollHeight - restore.prevScrollHeight;
+    container.scrollTop = restore.prevScrollTop + Math.max(0, delta);
+  }, [messages, scrollContainerRef]);
+
+  const loadOlderMessages = useCallback(async () => {
+    const friendId = selectedFriendIdRef.current;
+    if (!friendId || !nextCursor || !hasMoreMessages || isLoadingOlderRef.current || isMessagesLoading) {
+      return;
+    }
+    isLoadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    setOlderMessagesError(null);
+
+    try {
+      const response = await apiFetch(
+        `/api/v1/friends/${encodeURIComponent(friendId)}/messages?limit=40&before=${encodeURIComponent(nextCursor)}`
+      );
+      const data = await readApi<{
+        messages?: FriendMessage[];
+        nextCursor?: string | null;
+        hasMore?: boolean;
+      }>(response);
+      if (selectedFriendIdRef.current !== friendId) return;
+
+      const older = Array.isArray(data.messages) ? data.messages : [];
+      const container = scrollContainerRef.current;
+      if (container && older.length > 0) {
+        pendingScrollRestoreRef.current = {
+          prevScrollHeight: container.scrollHeight,
+          prevScrollTop: container.scrollTop,
+        };
+      }
+      if (older.length > 0) {
+        setMessages((current) => mergeFriendMessages(current, older));
+      }
+      setNextCursor(typeof data.nextCursor === 'string' ? data.nextCursor : null);
+      setHasMoreMessages(Boolean(data.hasMore && data.nextCursor));
+    } catch (requestError) {
+      if (selectedFriendIdRef.current === friendId) {
+        setOlderMessagesError(requestError instanceof Error ? requestError.message : 'Không thể tải thêm tin cũ.');
+      }
+    } finally {
+      isLoadingOlderRef.current = false;
+      setIsLoadingOlder(false);
+    }
+  }, [hasMoreMessages, isMessagesLoading, nextCursor, scrollContainerRef]);
+
+  const handleThreadScroll = useCallback(() => {
+    handleMessagesScroll();
+    const container = scrollContainerRef.current;
+    if (container && container.scrollTop <= 80 && hasMoreMessages && !isLoadingOlderRef.current && !isMessagesLoading) {
+      void loadOlderMessages();
+    }
+  }, [handleMessagesScroll, hasMoreMessages, isMessagesLoading, loadOlderMessages, scrollContainerRef]);
 
   const handleAcceptRequest = async (requestId: string) => {
     if (acceptingRequestId) return;
@@ -421,284 +419,24 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       setConfirmAction(null);
     }
   };
-  const handleToggleMediaConsent = async () => {
-    if (!activeSessionId || mediaBusy) return;
-    setMediaBusy(true);
-    setMessageError(null);
-    try {
-      const enabled = !mediaConsent;
-      const response = await apiFetch('/api/v1/media/consent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSessionId, enabled }),
-      });
-      await readApi<{ success?: boolean }>(response);
-      setMediaConsent(enabled);
-    } catch (err) {
-      setMessageError(err instanceof Error ? err.message : 'Không thể cập nhật quyền nhận media.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const submitAdultConsent = async (enabled: boolean, policyAcknowledged: boolean) => {
-    if (!activeSessionId) return;
-    setMediaBusy(true);
-    setMessageError(null);
-    try {
-      const response = await apiFetch('/api/v1/media/adult-consent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSessionId, enabled, policyAcknowledged }),
-      });
-      await readApi<{ success?: boolean }>(response);
-      setMyAdultConsent(enabled);
-      setShowAdultConsentModal(false);
-      setAdultPolicyAck(false);
-    } catch (err) {
-      setMessageError(err instanceof Error ? err.message : 'Không thể cập nhật quyền nhận nội dung 18+.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleAdultConsentToggle = () => {
-    if (!activeSessionId || mediaBusy) return;
-    if (myAdultConsent) {
-      void submitAdultConsent(false, false);
-    } else {
-      setAdultPolicyAck(false);
-      setShowAdultConsentModal(true);
-    }
-  };
-
-  const uploadAndSendFriendMedia = async (
-    file: File,
-    mediaType: 'IMAGE' | 'AUDIO' | 'VIDEO',
-    additionalMeta: Pick<FriendMediaMeta, 'waveform' | 'durationSec' | 'width' | 'height'> = {},
-    adultFlags: { isAdult?: boolean; senderConfirmed18Plus?: boolean; senderConfirmedConsent?: boolean } = {}
-  ) => {
-    if (!selectedFriendId || !activeSessionId) {
-      throw new Error('Phiên trò chuyện bạn bè chưa sẵn sàng.');
-    }
-    const uploaded = await uploadAndFinalizeEncryptedMedia({
-      sessionId: activeSessionId,
-      recipientId: selectedFriendId,
-      file,
-      mediaType,
-      isAdult: adultFlags.isAdult,
-      senderConfirmed18Plus: adultFlags.senderConfirmed18Plus,
-      senderConfirmedConsent: adultFlags.senderConfirmedConsent,
-    });
-    const mediaPayload: FriendMediaMeta = {
-      mediaId: uploaded.mediaId,
-      contentType: uploaded.verifiedMime || uploaded.contentType,
-      mediaType,
-      ...(adultFlags.isAdult ? { isAdult: true } : {}),
-      ...additionalMeta,
-    };
-    const response = await apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: mediaType,
-        content: JSON.stringify(mediaPayload),
-        mediaId: uploaded.mediaId,
-        isAdultContent: Boolean(adultFlags.isAdult),
-        metadata: mediaPayload,
-        clientMessageId: crypto.randomUUID(),
-      }),
-    });
-    const message = await readApi<FriendMessage>(response);
-    setMessages((current) => (current.some((m) => m.id === message.id) ? current : [...current, message]));
-  };
-
-  const handleFriendFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !selectedFriendId || !activeSessionId) return;
-    const mediaType = file.type.startsWith('image/')
-      ? 'IMAGE'
-      : file.type.startsWith('audio/')
-      ? 'AUDIO'
-      : file.type.startsWith('video/')
-      ? 'VIDEO'
-      : null;
-    if (!mediaType) {
-      setMessageError('Chỉ hỗ trợ ảnh, audio hoặc video.');
-      return;
-    }
-    const maxBytes = mediaType === 'IMAGE' ? 30_000_000 : mediaType === 'VIDEO' ? 100_000_000 : 20_000_000;
-    if (file.size >= maxBytes) {
-      setMessageError('Dung lượng tệp vượt quá giới hạn cho phép.');
-      return;
-    }
-    if (sendAsAdult && (mediaType === 'IMAGE' || mediaType === 'VIDEO')) {
-      if (!partnerAdultConsent) {
-        setMessageError('Bạn bè chưa bật quyền "Nhận nội dung 18+" trong luồng chat này.');
-        return;
-      }
-      setPendingMediaFile(file);
-      setPendingMediaType(mediaType);
-      setSenderConfirm18Plus(false);
-      setSenderConfirmConsent(false);
-      setShowSenderAdultModal(true);
-      return;
-    }
-    setMediaBusy(true);
-    setMessageError(null);
-    try {
-      if (mediaType === 'IMAGE') {
-        const compressed = await ImageCompressor.compress(file);
-        await uploadAndSendFriendMedia(compressed.file, mediaType, {
-          width: compressed.width,
-          height: compressed.height,
-        });
-      } else {
-        await uploadAndSendFriendMedia(file, mediaType);
-      }
-    } catch (err) {
-      setMessageError(err instanceof Error ? err.message : 'Không thể gửi media.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const confirmFriendAdultUpload = async () => {
-    if (!pendingMediaFile || !pendingMediaType || !senderConfirm18Plus || !senderConfirmConsent) return;
-    const file = pendingMediaFile;
-    const mediaType = pendingMediaType;
-    setShowSenderAdultModal(false);
-    setPendingMediaFile(null);
-    setPendingMediaType(null);
-    setMediaBusy(true);
-    setMessageError(null);
-    try {
-      const adultFlags = { isAdult: true, senderConfirmed18Plus: true, senderConfirmedConsent: true };
-      if (mediaType === 'IMAGE') {
-        const compressed = await ImageCompressor.compress(file);
-        await uploadAndSendFriendMedia(
-          compressed.file,
-          mediaType,
-          { width: compressed.width, height: compressed.height },
-          adultFlags
-        );
-      } else {
-        await uploadAndSendFriendMedia(file, mediaType, {}, adultFlags);
-      }
-    } catch (err) {
-      setMessageError(err instanceof Error ? err.message : 'Không gửi được nội dung 18+.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleToggleFriendRecording = async () => {
-    if (!selectedFriendId || !activeSessionId || mediaBusy) return;
-    if (!isRecording) {
-      const recorder = new AudioRecorder();
-      try {
-        await recorder.start();
-        audioRecorderRef.current = recorder;
-        setMessageError(null);
-        setIsRecording(true);
-      } catch (err) {
-        setMessageError(err instanceof Error ? err.message : 'Không thể bắt đầu ghi âm.');
-        await recorder.cancel();
-      }
-      return;
-    }
-    const recorder = audioRecorderRef.current;
-    if (!recorder) {
-      setIsRecording(false);
-      return;
-    }
-    setMediaBusy(true);
-    try {
-      const recording = await recorder.stop();
-      audioRecorderRef.current = null;
-      setIsRecording(false);
-      const ext = recording.blob.type.includes('mp4') ? 'm4a' : 'webm';
-      const file = new File([recording.blob], `friend-voice-${Date.now()}.${ext}`, { type: recording.blob.type });
-      await uploadAndSendFriendMedia(file, 'AUDIO', {
-        durationSec: recording.durationSeconds,
-        waveform: recording.waveform,
-      });
-    } catch (err) {
-      audioRecorderRef.current = null;
-      setIsRecording(false);
-      await recorder.cancel();
-      setMessageError(err instanceof Error ? err.message : 'Không gửi được ghi âm.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleViewFriendMedia = async (message: FriendMessage, media: FriendMediaMeta) => {
-    setMediaBusy(true);
-    setMessageError(null);
-    try {
-      const view = await fetchDecryptedMediaView(media.mediaId, media.contentType);
-      clearMediaPreview(message.id);
-      previewUrlsRef.current.set(message.id, view.previewUrl);
-      previewTimeoutsRef.current.set(
-        message.id,
-        window.setTimeout(() => {
-          URL.revokeObjectURL(view.previewUrl);
-          previewUrlsRef.current.delete(message.id);
-          previewTimeoutsRef.current.delete(message.id);
-          setMediaViews((prev) => ({
-            ...prev,
-            [message.id]: { ...(prev[message.id] || {}), previewUrl: undefined },
-          }));
-        }, (view.expiresIn || 300) * 1000)
-      );
-      setMediaViews((prev) => ({
-        ...prev,
-        [message.id]: {
-          previewUrl: view.previewUrl,
-          watermarkText: view.watermarkText,
-          watermarkedMode: view.watermarkedMode,
-        },
-      }));
-    } catch (err) {
-      setMessageError(err instanceof Error ? err.message : 'Không thể mở media.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleRevokeFriendMedia = async (message: FriendMessage, media: FriendMediaMeta) => {
-    clearMediaPreview(message.id);
-    setMediaViews((prev) => ({
-      ...prev,
-      [message.id]: { ...(prev[message.id] || {}), previewUrl: undefined },
-    }));
-    try {
-      await revokeMediaAsset(media.mediaId);
-      setMediaViews((prev) => ({
-        ...prev,
-        [message.id]: { ...(prev[message.id] || {}), revoked: true, previewUrl: undefined },
-      }));
-    } catch (err) {
-      setMessageError(err instanceof Error ? err.message : 'Không thể thu hồi media.');
-    }
-  };
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || !selectedFriendId || isSending) return;
+    const targetFriendId = selectedFriendId;
+    if (!content || !targetFriendId || isSending) return;
     setIsSending(true);
     setMessageError(null);
     try {
-      const response = await apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/messages`, {
+      const response = await apiFetch(`/api/v1/friends/${encodeURIComponent(targetFriendId)}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, clientMessageId: crypto.randomUUID() }),
       });
       const message = await readApi<FriendMessage>(response);
-      setMessages((current) => (current.some((m) => m.id === message.id) ? current : [...current, message]));
+      if (selectedFriendIdRef.current === targetFriendId) {
+        setMessages((current) => mergeFriendMessages(current, [message]));
+      }
       setDraft('');
     } catch (requestError) {
       setMessageError(requestError instanceof Error ? requestError.message : 'Không thể gửi tin nhắn.');
@@ -731,26 +469,26 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              onClick={() => void handleToggleMediaConsent()}
-              disabled={mediaBusy || !activeSessionId}
-              aria-pressed={mediaConsent}
+              onClick={() => void sessionMedia.handleConsentToggle()}
+              disabled={sessionMedia.mediaBusy || !activeSessionId}
+              aria-pressed={sessionMedia.mediaConsent}
               className={`relative rounded-lg p-2 transition ${
-                mediaConsent ? 'bg-emerald-100 text-emerald-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                sessionMedia.mediaConsent ? 'bg-emerald-100 text-emerald-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
               } disabled:opacity-50`}
-              title={mediaConsent ? 'Đang bật nhận ảnh/video' : 'Bật/tắt quyền nhận media'}
+              title={sessionMedia.mediaConsent ? 'Đang bật nhận ảnh/video' : 'Bật/tắt quyền nhận media'}
               aria-label="Quyền nhận media"
             >
               <ShieldCheck size={17} />
             </button>
             <button
               type="button"
-              onClick={handleAdultConsentToggle}
-              disabled={mediaBusy || !activeSessionId}
-              aria-pressed={myAdultConsent}
+              onClick={sessionMedia.handleAdultConsentToggle}
+              disabled={sessionMedia.mediaBusy || !activeSessionId}
+              aria-pressed={sessionMedia.myAdultConsent}
               className={`relative rounded-lg p-2 transition ${
-                myAdultConsent ? 'bg-rose-100 text-rose-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                sessionMedia.myAdultConsent ? 'bg-rose-100 text-rose-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
               } disabled:opacity-50`}
-              title={myAdultConsent ? 'Đang bật nhận nội dung 18+' : 'Bật/tắt nhận nội dung 18+'}
+              title={sessionMedia.myAdultConsent ? 'Đang bật nhận nội dung 18+' : 'Bật/tắt nhận nội dung 18+'}
               aria-label="Quyền nhận nội dung 18+"
             >
               <Flame size={17} />
@@ -778,147 +516,120 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
           </div>
         </div>
 
-        <div className="flex-1 space-y-2 overflow-y-auto py-4" aria-live="polite">
-          {isMessagesLoading && <p className="py-8 text-center text-sm text-slate-500">Đang tải tin nhắn…</p>}
-          {!isMessagesLoading && messageError && (
-            <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-sm text-rose-700" role="alert">
-              <p>{messageError}</p>
-              <button type="button" onClick={() => setSelectedFriendId(null)} className="mt-2 font-semibold underline">Chọn lại bạn</button>
-            </div>
-          )}
-          {!isMessagesLoading && !messageError && messages.length === 0 && (
-            <div className="flex h-full min-h-48 flex-col items-center justify-center px-6 text-center">
-              <MessageCircle className="text-blue-500" size={28} />
-              <p className="mt-2 text-sm font-semibold text-slate-700">Chưa có tin nhắn</p>
-              <p className="mt-1 text-xs text-slate-500">Gửi lời chào đầu tiên. Tin nhắn được lưu trong 30 ngày.</p>
-            </div>
-          )}
-          {!isMessagesLoading && !messageError && messages.map((message) => {
-            const isMine = message.senderId === currentUserId;
-            const media = parseFriendMedia(message);
-            const viewState = mediaViews[message.id];
-            return (
-              <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm ${isMine ? 'rounded-br-md bg-blue-600 text-white' : 'rounded-bl-md bg-slate-100 text-slate-800'}`}>
-                  {media ? (
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold">
-                          {media.mediaType === 'IMAGE'
-                            ? isMine ? 'Ảnh đã gửi' : 'Ảnh đã nhận'
-                            : media.mediaType === 'AUDIO'
-                            ? isMine ? 'Audio đã gửi' : 'Audio đã nhận'
-                            : isMine ? 'Video đã gửi' : 'Video đã nhận'}
-                        </span>
-                        {media.isAdult && (
-                          <span className="rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[9px] font-bold">🔞 18+</span>
-                        )}
-                      </div>
-                      {viewState?.previewUrl && media.mediaType === 'IMAGE' && (
-                        <div className="relative select-none">
-                          <img
-                            src={viewState.previewUrl}
-                            alt={viewState.watermarkText || 'Media'}
-                            draggable={false}
-                            onContextMenu={(event) => event.preventDefault()}
-                            className="max-h-56 select-none rounded-lg"
-                          />
-                          {viewState.watermarkedMode !== 'embedded' && viewState.watermarkText && (
-                            <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-black/55 px-1 py-0.5 text-[9px] text-white">
-                              {viewState.watermarkText}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {viewState?.previewUrl && media.mediaType === 'AUDIO' && (
-                        <audio
-                          controls
-                          controlsList="nodownload"
-                          onContextMenu={(event) => event.preventDefault()}
-                          src={viewState.previewUrl}
-                          className="max-w-full"
-                        />
-                      )}
-                      {viewState?.previewUrl && media.mediaType === 'VIDEO' && (
-                        <div className="relative select-none">
-                          <video
-                            controls
-                            controlsList="nodownload noplaybackrate"
-                            disablePictureInPicture
-                            onContextMenu={(event) => event.preventDefault()}
-                            src={viewState.previewUrl}
-                            className="max-h-56 rounded-lg"
-                          />
-                          {viewState.watermarkedMode !== 'embedded' && viewState.watermarkText && (
-                            <span className="pointer-events-none absolute inset-x-1 bottom-8 rounded bg-black/55 px-1 py-0.5 text-[9px] text-white">
-                              {viewState.watermarkText}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {!viewState?.previewUrl && !viewState?.revoked && (
-                        <button
-                          type="button"
-                          onClick={() => void handleViewFriendMedia(message, media)}
-                          disabled={mediaBusy}
-                          className="flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 text-[11px] font-bold text-blue-700"
-                        >
-                          <Eye size={12} />Xem trong 5 phút
-                        </button>
-                      )}
-                      {viewState?.revoked && <span className="text-[10px] opacity-75">Media đã bị thu hồi</span>}
-                      {isMine && !viewState?.revoked && (
-                        <button
-                          type="button"
-                          onClick={() => void handleRevokeFriendMedia(message, media)}
-                          className="flex items-center gap-1 text-[10px] font-semibold opacity-80 hover:opacity-100"
-                        >
-                          <Ban size={11} />Thu hồi quyền xem
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                  )}
-                  <time className={`mt-1 block text-[10px] ${isMine ? 'text-blue-100' : 'text-slate-400'}`} dateTime={message.sentAt}>{formatTime(message.sentAt)}</time>
-                </div>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleThreadScroll}
+            className="flex-1 space-y-2 overflow-y-auto py-4"
+            aria-live="polite"
+          >
+            {!isMessagesLoading && !messageError && hasMoreMessages && (
+              <div className="flex flex-col items-center gap-1 pb-2">
+                <button
+                  type="button"
+                  disabled={isLoadingOlder}
+                  onClick={() => void loadOlderMessages()}
+                  className="inline-flex min-h-[36px] items-center rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"
+                >
+                  {isLoadingOlder ? 'Đang tải tin cũ hơn…' : 'Tải tin nhắn cũ hơn'}
+                </button>
+                {olderMessagesError && (
+                  <p className="text-[11px] text-rose-600" role="alert">{olderMessagesError}</p>
+                )}
               </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
+            )}
+            {isMessagesLoading && <p className="py-8 text-center text-sm text-slate-500">Đang tải tin nhắn…</p>}
+            {!isMessagesLoading && messageError && (
+              <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-sm text-rose-700" role="alert">
+                <p>{messageError}</p>
+                <button type="button" onClick={() => setSelectedFriendId(null)} className="mt-2 font-semibold underline">Chọn lại bạn</button>
+              </div>
+            )}
+            {!isMessagesLoading && !messageError && messages.length === 0 && (
+              <div className="flex h-full min-h-48 flex-col items-center justify-center px-6 text-center">
+                <MessageCircle className="text-blue-500" size={28} />
+                <p className="mt-2 text-sm font-semibold text-slate-700">Chưa có tin nhắn</p>
+                <p className="mt-1 text-xs text-slate-500">Gửi lời chào đầu tiên. Tin nhắn được lưu trong 30 ngày.</p>
+              </div>
+            )}
+            {!isMessagesLoading && !messageError && messages.map((message) => {
+              const isMine = message.senderId === currentUserId;
+              const media = parseFriendMedia(message);
+              const mediaLabel = media
+                ? media.mediaType === 'IMAGE'
+                  ? isMine ? 'Ảnh đã gửi' : 'Ảnh đã nhận'
+                  : media.mediaType === 'AUDIO'
+                  ? isMine ? 'Audio đã gửi' : 'Audio đã nhận'
+                  : isMine ? 'Video đã gửi' : 'Video đã nhận'
+                : '';
+              return (
+                <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm ${isMine ? 'rounded-br-md bg-blue-600 text-white' : 'rounded-bl-md bg-slate-100 text-slate-800'}`}>
+                    {media ? (
+                      <MediaAttachmentPreview
+                        title={mediaLabel}
+                        mediaType={media.mediaType}
+                        isAdult={media.isAdult}
+                        isMine={isMine}
+                        viewState={sessionMedia.mediaViews[message.id]}
+                        busy={sessionMedia.mediaBusy}
+                        onView={() => void sessionMedia.openMediaPreview(message.id, media.mediaId, media.contentType)}
+                        onRevoke={() => void sessionMedia.revokeMediaPreview(message.id, media.mediaId)}
+                      />
+                    ) : (
+                      <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                    )}
+                    <time className={`mt-1 block text-[10px] ${isMine ? 'text-blue-100' : 'text-slate-400'}`} dateTime={message.sentAt}>{formatTime(message.sentAt)}</time>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {showNewMessageButton && (
+            <button
+              type="button"
+              onClick={() => scrollToBottom('smooth')}
+              className="absolute bottom-3 right-2 z-10 inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-lg shadow-blue-500/30 transition hover:bg-blue-700"
+            >
+              <span>Tin mới ({unreadBelowCount})</span>
+              <ArrowDown size={14} aria-hidden="true" />
+            </button>
+          )}
         </div>
 
         <form onSubmit={handleSend} className="border-t border-slate-100 pt-2">
           {messageError && !isMessagesLoading && <p className="mb-2 text-xs text-rose-600" role="alert">{messageError}</p>}
           <div className="mb-1.5 flex items-center justify-between px-1 text-[10px] text-slate-500">
             <span>
-              Media: {partnerMediaConsent ? 'Bạn đã bật nhận' : 'Bạn chưa bật nhận'} ·{' '}
-              18+: {partnerAdultConsent ? 'Bạn đồng ý 18+' : 'Chưa đồng ý 18+'}
+              Media: {sessionMedia.partnerMediaConsent ? 'Bạn đã bật nhận' : 'Bạn chưa bật nhận'} ·{' '}
+              18+: {sessionMedia.partnerAdultConsent ? 'Bạn đồng ý 18+' : 'Chưa đồng ý 18+'}
             </span>
             <button
               type="button"
-              onClick={() => setSendAsAdult((prev) => !prev)}
-              aria-pressed={sendAsAdult}
+              onClick={() => sessionMedia.setSendAsAdult((prev) => !prev)}
+              aria-pressed={sessionMedia.sendAsAdult}
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold transition ${
-                sendAsAdult ? 'bg-rose-100 text-rose-700 ring-1 ring-rose-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                sessionMedia.sendAsAdult ? 'bg-rose-100 text-rose-700 ring-1 ring-rose-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
               <Flame size={11} />
-              <span>{sendAsAdult ? 'Đang bật gửi 18+' : 'Nội dung người lớn'}</span>
+              <span>{sessionMedia.sendAsAdult ? 'Đang bật gửi 18+' : 'Nội dung người lớn'}</span>
             </button>
           </div>
           <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 p-1.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
             <input
-              ref={mediaInputRef}
+              ref={sessionMedia.mediaInputRef}
               type="file"
-              accept={sendAsAdult ? 'image/*,video/*' : 'image/*,audio/*,video/*'}
-              onChange={(e) => void handleFriendFileSelected(e)}
+              accept={sessionMedia.sendAsAdult ? 'image/*,video/*' : 'image/*,audio/*,video/*'}
+              onChange={(e) => void sessionMedia.handleFileSelected(e)}
               className="hidden"
             />
             <button
               type="button"
-              onClick={() => mediaInputRef.current?.click()}
-              disabled={mediaBusy || isRecording || !activeSessionId}
+              onClick={() => sessionMedia.mediaInputRef.current?.click()}
+              disabled={sessionMedia.mediaBusy || sessionMedia.isRecording || !activeSessionId}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-200/70 disabled:opacity-40"
               aria-label="Gửi ảnh hoặc video"
             >
@@ -926,17 +637,17 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
             </button>
             <button
               type="button"
-              onClick={() => void handleToggleFriendRecording()}
-              disabled={mediaBusy || !activeSessionId}
+              onClick={() => void sessionMedia.handleToggleRecording()}
+              disabled={sessionMedia.mediaBusy || !activeSessionId}
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl disabled:opacity-40 ${
-                isRecording ? 'animate-pulse bg-rose-600 text-white' : 'text-slate-500 hover:bg-slate-200/70'
+                sessionMedia.isRecording ? 'animate-pulse bg-rose-600 text-white' : 'text-slate-500 hover:bg-slate-200/70'
               }`}
-              aria-label={isRecording ? 'Dừng và gửi ghi âm' : 'Ghi âm'}
+              aria-label={sessionMedia.isRecording ? 'Dừng và gửi ghi âm' : 'Ghi âm'}
             >
               <Mic size={16} />
             </button>
             <label htmlFor="friend-message" className="sr-only">Tin nhắn cho {selectedFriend.nickname}</label>
-            {isRecording ? (
+            {sessionMedia.isRecording ? (
               <span className="min-w-0 flex-1 px-2 text-xs font-semibold text-rose-600">Đang ghi âm… bấm mic để gửi</span>
             ) : (
               <input
@@ -946,76 +657,36 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                 placeholder="Nhắn tin riêng…"
                 maxLength={2000}
                 className="min-w-0 flex-1 bg-transparent px-2 text-sm text-slate-800 outline-none placeholder:text-slate-400"
-                disabled={isSending || mediaBusy}
+                disabled={isSending || sessionMedia.mediaBusy}
               />
             )}
-            <button type="submit" disabled={!draft.trim() || isSending || mediaBusy || isRecording} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Gửi tin nhắn">
+            <button type="submit" disabled={!draft.trim() || isSending || sessionMedia.mediaBusy || sessionMedia.isRecording} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Gửi tin nhắn">
               <Send size={16} />
             </button>
           </div>
         </form>
 
-        {showAdultConsentModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-                <Flame size={24} />
-              </div>
-              <h3 className="mt-3 text-center text-sm font-bold text-slate-900">Bật quyền nhận nội dung 18+?</h3>
-              <p className="mt-2 text-[11.5px] leading-relaxed text-slate-600">
-                Bạn sắp cho phép người bạn này gửi ảnh/video nhạy cảm (18+) trong cuộc trò chuyện riêng. Ảnh/video được đóng dấu truy vết; hệ thống không thể ngăn hoàn toàn việc chụp màn hình từ thiết bị khác và Quản trị viên có thể kiểm tra bằng chứng nếu có báo cáo.
-              </p>
-              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl bg-slate-50 p-2.5 text-[11px] text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={adultPolicyAck}
-                  onChange={(e) => setAdultPolicyAck(e.target.checked)}
-                  className="mt-0.5 rounded text-rose-600"
-                />
-                <span>Tôi xác nhận đã hiểu cảnh báo an toàn 18+ và đồng ý nhận nội dung người lớn.</span>
-              </label>
-              <div className="mt-4 flex gap-2">
-                <button type="button" onClick={() => setShowAdultConsentModal(false)} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-600">Hủy bỏ</button>
-                <button type="button" disabled={!adultPolicyAck || mediaBusy} onClick={() => void submitAdultConsent(true, true)} className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">Đồng ý bật 18+</button>
-              </div>
-            </div>
-          </div>
-        )}
+        <AdultReceiveConsentModal
+          open={sessionMedia.showAdultConsentModal}
+          description="Bạn sắp cho phép người bạn này gửi ảnh/video nhạy cảm (18+) trong cuộc trò chuyện riêng. Ảnh/video được đóng dấu truy vết; hệ thống không thể ngăn hoàn toàn việc chụp màn hình từ thiết bị khác và Quản trị viên có thể kiểm tra bằng chứng nếu có báo cáo."
+          ackLabel="Tôi xác nhận đã hiểu cảnh báo an toàn 18+ và đồng ý nhận nội dung người lớn."
+          adultPolicyAck={sessionMedia.adultPolicyAck}
+          busy={sessionMedia.mediaBusy}
+          onAckChange={sessionMedia.setAdultPolicyAck}
+          onCancel={() => sessionMedia.setShowAdultConsentModal(false)}
+          onConfirm={() => void sessionMedia.submitAdultConsent(true, true)}
+        />
 
-        {showSenderAdultModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600">
-                <AlertTriangle size={24} />
-              </div>
-              <h3 className="mt-3 text-center text-sm font-bold text-slate-900">Xác nhận trước khi gửi nội dung 18+</h3>
-              <div className="mt-3 space-y-2 text-[11px] text-slate-700">
-                <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-slate-50 p-2.5">
-                  <input type="checkbox" checked={senderConfirm18Plus} onChange={(e) => setSenderConfirm18Plus(e.target.checked)} className="mt-0.5 rounded text-rose-600" />
-                  <span>Tôi xác nhận mọi nhân vật trong ảnh/video đều đủ 18 tuổi trở lên.</span>
-                </label>
-                <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-slate-50 p-2.5">
-                  <input type="checkbox" checked={senderConfirmConsent} onChange={(e) => setSenderConfirmConsent(e.target.checked)} className="mt-0.5 rounded text-rose-600" />
-                  <span>Tôi xác nhận nội dung có sự đồng thuận hợp pháp, không xâm phạm riêng tư.</span>
-                </label>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSenderAdultModal(false);
-                    setPendingMediaFile(null);
-                    setPendingMediaType(null);
-                  }}
-                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-600"
-                >
-                  Hủy
-                </button>
-                <button type="button" disabled={!senderConfirm18Plus || !senderConfirmConsent || mediaBusy} onClick={() => void confirmFriendAdultUpload()} className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">Xác nhận & Gửi</button>
-              </div>
-            </div>
-          </div>
-        )}
+        <AdultSenderCommitmentsModal
+          open={sessionMedia.showSenderAdultModal}
+          confirm18Plus={sessionMedia.senderConfirm18Plus}
+          confirmConsent={sessionMedia.senderConfirmConsent}
+          busy={sessionMedia.mediaBusy}
+          onConfirm18PlusChange={sessionMedia.setSenderConfirm18Plus}
+          onConfirmConsentChange={sessionMedia.setSenderConfirmConsent}
+          onCancel={sessionMedia.cancelSenderAdultModal}
+          onSubmit={() => void sessionMedia.confirmSenderAdultUpload()}
+        />
       </section>
     );
   }

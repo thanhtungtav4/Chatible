@@ -10,6 +10,7 @@ import {
   KeyRound,
   Lock,
   LogOut,
+  MailCheck,
   Save,
   Send,
   ShieldAlert,
@@ -90,6 +91,22 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Email Verification State
+  const [emailVerified, setEmailVerified] = useState<boolean>(profile.emailVerified === true);
+  const [emailVerifyCode, setEmailVerifyCode] = useState('');
+  const [emailVerifyCooldown, setEmailVerifyCooldown] = useState(0);
+  const [isEmailVerifying, setIsEmailVerifying] = useState(false);
+  const [emailVerifyMsg, setEmailVerifyMsg] = useState<string | null>(null);
+  const [emailVerifyErr, setEmailVerifyErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (emailVerifyCooldown <= 0) return;
+    const t = window.setInterval(() => {
+      setEmailVerifyCooldown((p) => (p > 0 ? p - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [emailVerifyCooldown]);
+
   // Load private profile preferences from /api/v1/users/me
   useEffect(() => {
     let isCurrent = true;
@@ -102,6 +119,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
         if (data.preferredAgeMin !== undefined) setPreferredAgeMin(data.preferredAgeMin);
         if (data.preferredAgeMax !== undefined) setPreferredAgeMax(data.preferredAgeMax);
         if (data.mediaConsentDefault !== undefined) setMediaConsentDefault(data.mediaConsentDefault);
+        if (data.emailVerified !== undefined) setEmailVerified(data.emailVerified);
       })
       .catch(() => {});
     return () => {
@@ -354,6 +372,58 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
     }
   };
 
+  const handleResendEmailVerification = async () => {
+    setEmailVerifyErr(null);
+    setEmailVerifyMsg(null);
+    setIsEmailVerifying(true);
+    try {
+      const response = await apiFetch('/api/v1/auth/email-verification/resend', { method: 'POST' });
+      const data = (await response.json()) as {
+        alreadyVerified?: boolean;
+        message?: string;
+        verificationCode?: string;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error || 'Không thể gửi mã xác minh.');
+      if (data.alreadyVerified) {
+        setEmailVerified(true);
+        onProfileUpdate({ ...profile, emailVerified: true });
+      } else {
+        if (data.verificationCode) setEmailVerifyCode(data.verificationCode);
+        setEmailVerifyCooldown(60);
+      }
+      setEmailVerifyMsg(data.message || 'Đã gửi mã xác minh 6 số tới email của bạn.');
+    } catch (err) {
+      setEmailVerifyErr(err instanceof Error ? err.message : 'Gửi mã thất bại.');
+    } finally {
+      setIsEmailVerifying(false);
+    }
+  };
+
+  const handleConfirmEmailVerification = async (e: FormEvent) => {
+    e.preventDefault();
+    setEmailVerifyErr(null);
+    setEmailVerifyMsg(null);
+    setIsEmailVerifying(true);
+    try {
+      const response = await apiFetch('/api/v1/auth/email-verification/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: emailVerifyCode.trim() }),
+      });
+      const data = (await response.json()) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || 'Mã xác minh không hợp lệ.');
+      setEmailVerified(true);
+      setEmailVerifyCode('');
+      setEmailVerifyMsg(data.message || 'Đã xác minh email thành công!');
+      onProfileUpdate({ ...profile, emailVerified: true });
+    } catch (err) {
+      setEmailVerifyErr(err instanceof Error ? err.message : 'Xác minh thất bại.');
+    } finally {
+      setIsEmailVerifying(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     setIsDeletingAccount(true);
     setDeleteError(null);
@@ -398,6 +468,50 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
           <span>
             <strong>Bảo vệ riêng tư:</strong> Ngày sinh chỉ dùng để tính tuổi tự động, không bao giờ công khai cho người khác.
           </span>
+        </div>
+
+        <div className="mt-2.5 rounded-xl border border-slate-200/70 bg-white/85 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold">
+              <MailCheck size={15} className={emailVerified ? 'text-emerald-600' : 'text-amber-600'} />
+              <span className={emailVerified ? 'text-emerald-700' : 'text-amber-800'}>
+                {emailVerified ? 'Email đã được xác minh' : 'Email chưa được xác minh'}
+              </span>
+            </div>
+            {!emailVerified && (
+              <button
+                type="button"
+                disabled={isEmailVerifying || emailVerifyCooldown > 0}
+                onClick={() => void handleResendEmailVerification()}
+                className="rounded-lg bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-200 disabled:opacity-50"
+              >
+                {emailVerifyCooldown > 0 ? `Gửi lại (${emailVerifyCooldown}s)` : 'Gửi mã xác minh'}
+              </button>
+            )}
+          </div>
+          {!emailVerified && (
+            <form onSubmit={handleConfirmEmailVerification} className="mt-2.5 flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={emailVerifyCode}
+                onChange={(e) => setEmailVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Nhập mã 6 số"
+                aria-label="Mã xác minh email 6 số"
+                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-center font-mono text-xs font-bold tracking-widest text-slate-900 outline-none focus:border-blue-500"
+              />
+              <button
+                type="submit"
+                disabled={isEmailVerifying || emailVerifyCode.trim().length !== 6}
+                className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+              >
+                Xác nhận
+              </button>
+            </form>
+          )}
+          {emailVerifyMsg && <p className="mt-2 text-[11px] font-semibold text-emerald-600">{emailVerifyMsg}</p>}
+          {emailVerifyErr && <p className="mt-2 text-[11px] font-semibold text-rose-600">{emailVerifyErr}</p>}
         </div>
       </section>
 

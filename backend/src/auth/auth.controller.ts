@@ -13,11 +13,14 @@ import {
   tokenRevocationStore,
   verifyVaultUnlocked,
 } from './session-auth.util.js';
+import { sendApiError } from '../http/api-error.js';
+import { authenticateRequest } from '../http/route-auth.js';
 
 export class AuthController {
   private readonly authLimiter = new DistributedRateLimiter(15, 60_000, 'rl:auth:main');
   private readonly resetLimiter = new DistributedRateLimiter(5, 60_000, 'rl:auth:reset');
   private readonly vaultLimiter = new DistributedRateLimiter(5, 60_000, 'rl:auth:vault');
+  private readonly verifyLimiter = new DistributedRateLimiter(5, 15 * 60_000, 'rl:auth:verify');
 
   constructor(private readonly authService: AuthService) {}
 
@@ -25,11 +28,7 @@ export class AuthController {
     this.authLimiter.setRedis(redis);
     this.resetLimiter.setRedis(redis);
     this.vaultLimiter.setRedis(redis);
-  }
-
-  private async getAuthUserId(req: FastifyRequest): Promise<string> {
-    const claims = await getAuthenticatedClaims(req);
-    return claims.sub;
+    this.verifyLimiter.setRedis(redis);
   }
 
   registerRoutes(app: FastifyInstance) {
@@ -39,8 +38,11 @@ export class AuthController {
         const authConfig = await this.authService.getPublicAuthConfig();
         return reply.status(200).send(authConfig);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Không thể lấy cấu hình xác thực';
-        return reply.status(500).send({ error: message });
+        return sendApiError(reply, err, {
+          fallbackStatus: 500,
+          fallbackCode: 'INTERNAL_ERROR',
+          fallbackMessage: 'Không thể lấy cấu hình xác thực',
+        });
       }
     });
 
@@ -48,7 +50,7 @@ export class AuthController {
     app.post('/api/v1/auth/register', async (req: FastifyRequest<{ Body: RegisterDto }>, reply: FastifyReply) => {
       const clientIp = req.ip || '127.0.0.1';
       if (!(await this.authLimiter.check(`register:${clientIp}`))) {
-        return reply.status(429).send({ error: 'Quá nhiều yêu cầu đăng ký. Vui lòng thử lại sau một phút.' });
+        return reply.status(429).send({ error: 'Quá nhiều yêu cầu đăng ký. Vui lòng thử lại sau một phút.', code: 'RATE_LIMITED' });
       }
       try {
         const result = await this.authService.register(req.body);
@@ -57,8 +59,7 @@ export class AuthController {
         }
         return reply.status(201).send({ expiresIn: result.expiresIn, profile: result.profile });
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Đăng ký thất bại';
-        return reply.status(400).send({ error: message });
+        return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Đăng ký thất bại' });
       }
     });
 
@@ -66,7 +67,7 @@ export class AuthController {
     app.post('/api/v1/auth/login', async (req: FastifyRequest<{ Body: LoginDto }>, reply: FastifyReply) => {
       const clientIp = req.ip || '127.0.0.1';
       if (!(await this.authLimiter.check(`login:${clientIp}`))) {
-        return reply.status(429).send({ error: 'Quá nhiều yêu cầu đăng nhập. Vui lòng thử lại sau một phút.' });
+        return reply.status(429).send({ error: 'Quá nhiều yêu cầu đăng nhập. Vui lòng thử lại sau một phút.', code: 'RATE_LIMITED' });
       }
       try {
         const result = await this.authService.login(req.body);
@@ -75,8 +76,11 @@ export class AuthController {
         }
         return reply.status(200).send({ expiresIn: result.expiresIn, profile: result.profile });
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Đăng nhập thất bại';
-        return reply.status(401).send({ error: message });
+        return sendApiError(reply, err, {
+          fallbackStatus: 401,
+          fallbackCode: 'UNAUTHORIZED',
+          fallbackMessage: 'Đăng nhập thất bại',
+        });
       }
     });
 
@@ -84,7 +88,7 @@ export class AuthController {
     app.post('/api/v1/auth/google', async (req: FastifyRequest<{ Body: GoogleAuthDto }>, reply: FastifyReply) => {
       const clientIp = req.ip || '127.0.0.1';
       if (!(await this.authLimiter.check(`google:${clientIp}`))) {
-        return reply.status(429).send({ error: 'Quá nhiều yêu cầu xác thực Google. Vui lòng thử lại sau một phút.' });
+        return reply.status(429).send({ error: 'Quá nhiều yêu cầu xác thực Google. Vui lòng thử lại sau một phút.', code: 'RATE_LIMITED' });
       }
       try {
         const result = await this.authService.googleAuth(req.body);
@@ -93,8 +97,7 @@ export class AuthController {
         }
         return reply.status(200).send({ expiresIn: result.expiresIn, profile: result.profile });
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Google login thất bại';
-        return reply.status(400).send({ error: message });
+        return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Google login thất bại' });
       }
     });
 
@@ -119,14 +122,13 @@ export class AuthController {
       async (req: FastifyRequest<{ Body: { email: string } }>, reply: FastifyReply) => {
         const clientIp = req.ip || '127.0.0.1';
         if (!(await this.resetLimiter.check(`forgot:${clientIp}`))) {
-          return reply.status(429).send({ error: 'Vui lòng chờ 1 phút trước khi yêu cầu mã mới.' });
+          return reply.status(429).send({ error: 'Vui lòng chờ 1 phút trước khi yêu cầu mã mới.', code: 'RATE_LIMITED' });
         }
         try {
           const result = await this.authService.forgotPassword(req.body?.email);
           return reply.status(200).send(result);
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Yêu cầu đặt lại mật khẩu thất bại';
-          return reply.status(400).send({ error: message });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Yêu cầu đặt lại mật khẩu thất bại' });
         }
       }
     );
@@ -140,15 +142,14 @@ export class AuthController {
       ) => {
         const clientIp = req.ip || '127.0.0.1';
         if (!(await this.resetLimiter.check(`reset:${clientIp}`))) {
-          return reply.status(429).send({ error: 'Quá nhiều lần thử mã đặt lại. Vui lòng thử lại sau 1 phút.' });
+          return reply.status(429).send({ error: 'Quá nhiều lần thử mã đặt lại. Vui lòng thử lại sau 1 phút.', code: 'RATE_LIMITED' });
         }
         try {
           const result = await this.authService.resetPassword(req.body);
           clearAuthCookies(reply);
           return reply.status(200).send(result);
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Đặt lại mật khẩu thất bại';
-          return reply.status(400).send({ error: message });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Đặt lại mật khẩu thất bại' });
         }
       }
     );
@@ -161,13 +162,12 @@ export class AuthController {
         reply: FastifyReply
       ) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'active_only');
           const result = await this.authService.changePassword(userId, req.body);
           clearAuthCookies(reply);
           return reply.status(200).send(result);
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Đổi mật khẩu thất bại';
-          return reply.status(400).send({ error: message });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Đổi mật khẩu thất bại' });
         }
       }
     );
@@ -175,25 +175,27 @@ export class AuthController {
     // GET /api/v1/users/me (Fetch authenticated user's private profile and preferences)
     app.get('/api/v1/users/me', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'active_only');
         const myProfile = await this.authService.getMyProfile(userId);
         return reply.status(200).send(myProfile);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Lỗi lấy thông tin tài khoản';
-        return reply.status(401).send({ error: message });
+        return sendApiError(reply, err, {
+          fallbackStatus: 500,
+          fallbackCode: 'INTERNAL_ERROR',
+          fallbackMessage: 'Lỗi lấy thông tin tài khoản',
+        });
       }
     });
 
     // DELETE /api/v1/users/me (Self-service account deletion)
     app.delete('/api/v1/users/me', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'active_only');
         const result = await this.authService.deleteAccount(userId);
         clearAuthCookies(reply);
         return reply.status(200).send(result);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Xóa tài khoản thất bại';
-        return reply.status(400).send({ error: message });
+        return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Xóa tài khoản thất bại' });
       }
     });
 
@@ -205,8 +207,11 @@ export class AuthController {
           const publicProfile = await this.authService.getPublicProfile(req.params.userId);
           return reply.status(200).send(publicProfile);
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Không tìm thấy người dùng';
-          return reply.status(404).send({ error: message });
+          return sendApiError(reply, err, {
+            fallbackStatus: 404,
+            fallbackCode: 'NOT_FOUND',
+            fallbackMessage: 'Không tìm thấy người dùng',
+          });
         }
       }
     );
@@ -214,25 +219,27 @@ export class AuthController {
     // PUT /api/v1/users/profile (Update nickname & matching preferences)
     app.put('/api/v1/users/profile', async (req: FastifyRequest<{ Body: UpdateProfileDto }>, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'active_only');
         const result = await this.authService.updateProfile(userId, req.body);
         return reply.status(200).send(result);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Cập nhật hồ sơ thất bại';
-        return reply.status(400).send({ error: message });
+        return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Cập nhật hồ sơ thất bại' });
       }
     });
 
     // GET /api/v1/users/me/stealth-vault (returns Stealth config + real cookie-verified unlocked status)
     app.get('/api/v1/users/me/stealth-vault', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'active_only');
         const vaultConfig = await this.authService.getStealthVaultConfig(userId);
         const unlocked = !vaultConfig.enabled || (await verifyVaultUnlocked(req, userId));
         return reply.status(200).send({ ...vaultConfig, unlocked });
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Không thể lấy cấu hình Kho riêng tư';
-        return reply.status(401).send({ error: message });
+        return sendApiError(reply, err, {
+          fallbackStatus: 500,
+          fallbackCode: 'INTERNAL_ERROR',
+          fallbackMessage: 'Không thể lấy cấu hình Kho riêng tư',
+        });
       }
     });
 
@@ -241,13 +248,12 @@ export class AuthController {
       '/api/v1/users/me/stealth-vault',
       async (req: FastifyRequest<{ Body: UpdateStealthVaultDto }>, reply: FastifyReply) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'active_only');
           const updated = await this.authService.updateStealthVault(userId, req.body);
           clearVaultUnlockCookie(reply);
           return reply.status(200).send(updated);
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Không thể cập nhật Kho riêng tư';
-          return reply.status(400).send({ error: message });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Không thể cập nhật Kho riêng tư' });
         }
       }
     );
@@ -257,18 +263,17 @@ export class AuthController {
       '/api/v1/users/me/stealth-vault/unlock',
       async (req: FastifyRequest<{ Body: { pin?: string } }>, reply: FastifyReply) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'active_only');
           const clientIp = req.ip || '127.0.0.1';
           if (!(await this.vaultLimiter.check(`vault:${userId}:${clientIp}`))) {
-            return reply.status(429).send({ error: 'Đã thử quá nhiều lần. Vui lòng chờ một phút.' });
+            return reply.status(429).send({ error: 'Đã thử quá nhiều lần. Vui lòng chờ một phút.', code: 'RATE_LIMITED' });
           }
           const result = await this.authService.unlockStealthVault(userId, req.body?.pin);
           const vaultToken = issueVaultUnlockToken(userId, 600);
           setVaultUnlockCookie(reply, vaultToken, 600);
           return reply.status(200).send({ ...result, unlocked: true, expiresIn: 600 });
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Không thể mở khóa Kho riêng tư';
-          return reply.status(400).send({ error: message });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Không thể mở khóa Kho riêng tư' });
         }
       }
     );
@@ -278,5 +283,36 @@ export class AuthController {
       clearVaultUnlockCookie(reply);
       return reply.status(200).send({ unlocked: false });
     });
+
+    // POST /api/v1/auth/email-verification/resend (Send or resend 6-digit email verification code)
+    app.post('/api/v1/auth/email-verification/resend', async (req: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const userId = await authenticateRequest(req, 'active_only');
+        if (!(await this.resetLimiter.check(`email_resend:${userId}`))) {
+          return reply.status(429).send({ error: 'Bạn thao tác quá nhanh. Vui lòng chờ 1 phút.', code: 'RATE_LIMITED' });
+        }
+        const result = await this.authService.resendEmailVerification(userId);
+        return reply.status(200).send(result);
+      } catch (err: unknown) {
+        return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Không thể gửi mã xác minh email.' });
+      }
+    });
+
+    // POST /api/v1/auth/email-verification/confirm (Verify 6-digit OTP & mark user emailVerifiedAt)
+    app.post(
+      '/api/v1/auth/email-verification/confirm',
+      async (req: FastifyRequest<{ Body: { code?: string } }>, reply: FastifyReply) => {
+        try {
+          const userId = await authenticateRequest(req, 'active_only');
+          if (!(await this.verifyLimiter.check(`email_confirm:${userId}`))) {
+            return reply.status(429).send({ error: 'Nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút.', code: 'RATE_LIMITED' });
+          }
+          const result = await this.authService.verifyEmailCode(userId, req.body?.code || '');
+          return reply.status(200).send(result);
+        } catch (err: unknown) {
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Xác minh email thất bại.' });
+        }
+      }
+    );
   }
 }

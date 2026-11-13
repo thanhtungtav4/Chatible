@@ -17,12 +17,22 @@ export class AudioRecorder {
   private samplePoints: number[] = [];
   private sampleInterval: ReturnType<typeof setInterval> | null = null;
   private startTime = 0;
+  private cancelled = false;
+
+  isCancelled(): boolean {
+    return this.cancelled;
+  }
 
   async start(): Promise<void> {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       throw new Error('Trình duyệt không hỗ trợ ghi âm.');
     }
+    this.cancelled = false;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (this.cancelled) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     try {
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -101,6 +111,7 @@ export class AudioRecorder {
   }
 
   async cancel(): Promise<void> {
+    this.cancelled = true;
     const recorder = this.mediaRecorder;
     if (recorder && recorder.state !== 'inactive') {
       await new Promise<void>((resolve) => {

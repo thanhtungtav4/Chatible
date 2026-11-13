@@ -23,6 +23,7 @@ import { MediaService } from './media/media.service.js';
 import { MediaController } from './media/media.controller.js';
 import { RedisVideoWatermarkQueue } from './media/media-queue.service.js';
 import { SafetyService } from './safety/safety.service.js';
+import { SafetyNotificationService } from './safety/notification.service.js';
 import { FriendsService } from './friends/friends.service.js';
 import { AdminService } from './admin/admin.service.js';
 import { DataCleanupService } from './cron/cleanup.service.js';
@@ -69,7 +70,10 @@ async function ensureSuperAdminPrincipal(): Promise<void> {
 }
 
 async function bootstrap() {
+  const trustProxy = process.env.TRUST_PROXY === 'true' || config.nodeEnv === 'production';
   const app = fastify({
+    trustProxy,
+    bodyLimit: 1_048_576,
     logger: {
       level: 'info',
       serializers: { req: serializeRequest },
@@ -128,13 +132,17 @@ async function bootstrap() {
   });
 
   // Readiness & Healthcheck endpoint (checks DB, Redis & Media Worker/FFmpeg heartbeat)
-  let healthRedis: Redis | null = null;
   const { kms, providerLabel } = createConfiguredKms((event) => {
     app.log.info({ keyAccessAudit: event }, '[KeyAccessAudit]');
   });
 
-  const rateLimitRedis = new Redis(config.redisUrl, { lazyConnect: true, retryStrategy: () => null });
-  const videoQueue = new RedisVideoWatermarkQueue(rateLimitRedis);
+  const sharedRedis = new Redis(config.redisUrl, {
+    lazyConnect: true,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+  });
+  const videoQueue = new RedisVideoWatermarkQueue(sharedRedis);
 
   const handleHealthCheck = async (_req: FastifyRequest, reply: import('fastify').FastifyReply) => {
     let dbStatus = 'ok';
@@ -146,11 +154,10 @@ async function bootstrap() {
       dbStatus = 'error';
     }
     try {
-      if (!healthRedis) {
-        healthRedis = new Redis(config.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
-        await healthRedis.connect();
+      if (sharedRedis.status !== 'ready') {
+        await sharedRedis.connect();
       }
-      await healthRedis.ping();
+      await sharedRedis.ping();
       workerHealth = await videoQueue.getWorkerHealth();
     } catch {
       redisStatus = 'error';
@@ -196,9 +203,10 @@ async function bootstrap() {
   // Register Super Admin S11 Control Deck & Audit Routes
   const friendsService = new FriendsService(cryptoService, mediaService);
   const safetyService = new SafetyService(cryptoService, config.superAdminId);
+  const notificationService = new SafetyNotificationService(mailService);
   const groupsController = new GroupsController(groupsService, safetyService);
   groupsController.registerRoutes(app);
-  const adminService = new AdminService(cryptoService, config.superAdminId, mailService, mediaService);
+  const adminService = new AdminService(cryptoService, config.superAdminId, mailService, mediaService, notificationService);
   const adminController = new AdminController(adminService, groupsService);
   adminController.registerRoutes(app);
 
@@ -209,7 +217,7 @@ async function bootstrap() {
   const recentSessionsController = new RecentSessionsController(cryptoService);
   recentSessionsController.registerRoutes(app);
 
-  const safetyController = new SafetyController(safetyService);
+  const safetyController = new SafetyController(safetyService, notificationService);
   safetyController.registerRoutes(app);
 
   // Start automated Data Cleanup Runner (runs on startup, then every hour)
@@ -234,9 +242,9 @@ async function bootstrap() {
     },
     transports: ['websocket', 'polling'],
   });
-  const matchingEngine = new MatchingEngine(config.redisUrl);
+  const matchingEngine = new MatchingEngine(sharedRedis);
   const sessionCoordinator = new RedisSessionCoordinator(
-    config.redisUrl,
+    sharedRedis,
     matchingEngine.namespace,
     matchingEngine.instanceId
   );
@@ -263,22 +271,22 @@ async function bootstrap() {
   });
 
   try {
+    await sharedRedis.connect();
     await Promise.all([
       matchingEngine.connect(),
       sessionCoordinator.connect(),
       adapterPublisher.connect(),
       adapterSubscriber.connect(),
-      rateLimitRedis.connect(),
     ]);
 
-    tokenRevocationStore.setRedis(rateLimitRedis);
-    authController.setRedis(rateLimitRedis);
-    mediaController.setRedis(rateLimitRedis);
-    friendsController.setRedis(rateLimitRedis);
-    safetyController.setRedis(rateLimitRedis);
-    adminController.setRedis(rateLimitRedis);
-    groupsController.setRedis(rateLimitRedis);
-    chatGateway.setRedis(rateLimitRedis);
+    tokenRevocationStore.setRedis(sharedRedis);
+    authController.setRedis(sharedRedis);
+    mediaController.setRedis(sharedRedis);
+    friendsController.setRedis(sharedRedis);
+    safetyController.setRedis(sharedRedis);
+    adminController.setRedis(sharedRedis);
+    groupsController.setRedis(sharedRedis);
+    chatGateway.setRedis(sharedRedis);
 
     io.adapter(createAdapter(adapterPublisher, adapterSubscriber));
     await chatGateway.registerHandlers();
@@ -299,8 +307,14 @@ async function bootstrap() {
         isTs ? './media/media-worker.process.ts' : './media/media-worker.process.js'
       );
       const startedAt = Date.now();
+      const workerMaxOldSpaceMb = Math.max(
+        128,
+        Math.min(1024, Number.parseInt(process.env.MEDIA_WORKER_MAX_OLD_SPACE_MB || '256', 10) || 256)
+      );
       const child = fork(workerEntry, [], {
-        execArgv: isTs ? ['--import', 'tsx', '--max-old-space-size=512'] : ['--max-old-space-size=512'],
+        execArgv: isTs
+          ? ['--import', 'tsx', `--max-old-space-size=${workerMaxOldSpaceMb}`]
+          : [`--max-old-space-size=${workerMaxOldSpaceMb}`],
         stdio: 'inherit',
       });
       mediaWorkerChild = child;
@@ -344,13 +358,12 @@ async function bootstrap() {
         mediaWorkerChild.kill('SIGTERM');
       }
       await chatGateway.close();
-      if (healthRedis) await healthRedis.quit();
       await Promise.all([
         matchingEngine.close(),
         sessionCoordinator.close(),
         adapterPublisher.quit(),
         adapterSubscriber.quit(),
-        rateLimitRedis.quit(),
+        sharedRedis.quit(),
       ]);
     });
     await app.listen({ port: config.port, host: config.host });
@@ -362,7 +375,7 @@ async function bootstrap() {
       sessionCoordinator.close(),
       adapterPublisher.quit(),
       adapterSubscriber.quit(),
-      rateLimitRedis.quit(),
+      sharedRedis.quit(),
     ]);
     process.exit(1);
   }

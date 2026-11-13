@@ -2,19 +2,8 @@ import crypto from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { and, eq, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
-import { db } from '../database/index.js';
-import { chatSessions } from '../database/schema/sessions.js';
-import { adultConsents, mediaAssets, mediaConsents, mediaViewTokens, mediaWatermarkedVariants } from '../database/schema/media.js';
-import { messages } from '../database/schema/messages.js';
-import { blockedUsers, friendships } from '../database/schema/friends.js';
-import { reportEvidence } from '../database/schema/reports.js';
-import { profiles, users } from '../database/schema/users.js';
 import type { IKmsProvider } from '@chatible/shared';
 import { createConfiguredKms } from '../kms/cloud-kms.service.js';
-import { config } from '../config/env.js';
 import {
   burnImageWatermarkFile,
   defaultImageSemaphore,
@@ -26,527 +15,25 @@ import {
   verifyMediaMagicBytes,
 } from './media-processing.util.js';
 import type { VideoWatermarkQueue } from './media-queue.service.js';
+import {
+  CONTENT_TYPE_PREFIX,
+  MEDIA_SIZE_LABEL,
+  MEDIA_SIZE_LIMIT_BYTES,
+  MediaError,
+  MediaProcessingPendingError,
+  type MediaAssetRow,
+  type MediaObjectStore,
+  type MediaRepository,
+  type MediaStatus,
+  type MediaType,
+} from './media.types.js';
+import { createDefaultMediaRepository } from './media.repository.js';
+import { createDefaultObjectStore } from './media.object-store.js';
+import { MediaPolicyHelper } from './media-policy.service.js';
 
-export type MediaType = 'IMAGE' | 'AUDIO' | 'VIDEO';
-export type MediaStatus = 'PENDING_UPLOAD' | 'READY' | 'FAILED';
-
-export interface MediaAssetRow {
-  id: string;
-  sessionId: string;
-  ownerId: string;
-  recipientId: string;
-  objectKey: string;
-  mediaType: string;
-  contentType: string;
-  fileSize: number;
-  encryptedDek: string;
-  iv: string;
-  authTag: string;
-  status: string;
-  verifiedMime: string | null;
-  finalizedAt: Date | null;
-  isAdult: boolean;
-  senderConfirmed18Plus: boolean;
-  senderConfirmedConsent: boolean;
-  watermarkToken: string;
-  createdAt?: Date;
-  expiresAt: Date;
-  revokedAt: Date | null;
-}
-
-export interface MediaConsentRow {
-  sessionId: string;
-  recipientId: string;
-  enabled: boolean;
-}
-
-export interface AdultConsentRow {
-  sessionId: string;
-  recipientId: string;
-  enabled: boolean;
-  policyAcknowledgedAt: Date | null;
-}
-
-export interface MediaTokenRow {
-  mediaId: string;
-  recipientId: string;
-  tokenHash: string;
-  traceCode?: string | null;
-  watermarkText?: string | null;
-  streamKeyWrapped?: string | null;
-  expiresAt: Date;
-  revokedAt: Date | null;
-}
-
-export interface SessionRow {
-  id: string;
-  sessionType?: string;
-  userAId: string;
-  userBId: string;
-  expiresAt: Date;
-  status: string;
-}
-
-export interface MediaWatermarkedVariantRow {
-  id: string;
-  mediaId: string;
-  recipientId: string;
-  objectKey: string;
-  encryptedDek: string;
-  iv: string;
-  authTag: string;
-  contentType: string;
-  fileSize: number;
-  traceCode: string;
-  watermarkText: string;
-  status: string;
-  error?: string | null;
-  updatedAt?: Date;
-  expiresAt: Date;
-}
-
-export interface MediaObjectStore {
-  presignPut(input: { key: string; contentType: string; contentLength: number; mediaId: string }): Promise<string>;
-  putStream?(input: { key: string; body: NodeJS.ReadableStream | Buffer; contentType: string; contentLength: number }): Promise<void>;
-  exists(key: string): Promise<boolean>;
-  head?(key: string): Promise<{ exists: boolean; contentLength?: number; contentType?: string }>;
-  get(key: string): Promise<{ body: unknown; contentType?: string; contentLength?: number }>;
-  delete(key: string): Promise<void>;
-}
-
-export interface MediaRepository {
-  getSession(id: string): Promise<SessionRow | null>;
-  getAsset(id: string): Promise<MediaAssetRow | null>;
-  insertAsset(asset: MediaAssetRow): Promise<void>;
-  updateAssetStatus?(
-    id: string,
-    patch: { status: MediaStatus; fileSize?: number; verifiedMime?: string; finalizedAt?: Date }
-  ): Promise<void>;
-  listExpiredAssets(now: Date): Promise<Array<{ id: string; sessionId: string; objectKey: string }>>;
-  deleteAsset(id: string): Promise<void>;
-  getConsent(sessionId: string, recipientId: string): Promise<MediaConsentRow | null>;
-  upsertConsent(sessionId: string, recipientId: string, enabled: boolean): Promise<void>;
-  getAdultConsent?(sessionId: string, recipientId: string): Promise<AdultConsentRow | null>;
-  upsertAdultConsent?(sessionId: string, recipientId: string, enabled: boolean, policyAcknowledged: boolean): Promise<void>;
-  areFriends?(userAId: string, userBId: string): Promise<boolean>;
-  isBlocked?(userAId: string, userBId: string): Promise<boolean>;
-  getSafeRecipientLabel?(userId: string): Promise<string>;
-  insertToken(token: MediaTokenRow): Promise<void>;
-  getToken(tokenHash: string): Promise<MediaTokenRow | null>;
-  revokeAsset(mediaId: string, at: Date): Promise<void>;
-  isEvidence(mediaId: string): Promise<boolean>;
-  getUserStatus?(userId: string): Promise<string | null>;
-  getWatermarkedVariant?(mediaId: string, recipientId: string): Promise<MediaWatermarkedVariantRow | null>;
-  upsertWatermarkedVariant?(variant: Omit<MediaWatermarkedVariantRow, 'id'>): Promise<void>;
-  listWatermarkedVariantsForMedia?(mediaId: string): Promise<Array<{ objectKey: string }>>;
-}
-
-export class MediaError extends Error {
-  constructor(public readonly statusCode: number, message: string) {
-    super(message);
-  }
-}
-
-export class MediaProcessingPendingError extends Error {
-  constructor(
-    public readonly retryAfterMs: number,
-    message: string
-  ) {
-    super(message);
-  }
-}
-
-const MEDIA_SIZE_LIMIT_BYTES: Record<MediaType, number> = {
-  IMAGE: 30_000_000,
-  VIDEO: 100_000_000,
-  AUDIO: 20_000_000,
-};
-
-const MEDIA_SIZE_LABEL: Record<MediaType, string> = {
-  IMAGE: 'Ảnh phải nhỏ hơn 30 MB.',
-  VIDEO: 'Video phải nhỏ hơn 100 MB.',
-  AUDIO: 'Ghi âm phải nhỏ hơn 20 MB.',
-};
-
-const CONTENT_TYPE_PREFIX: Record<MediaType, string> = {
-  IMAGE: 'image/',
-  AUDIO: 'audio/',
-  VIDEO: 'video/',
-};
-
-const ORPHAN_UPLOAD_TTL_MS = 20 * 60 * 1000;
-
-const defaultRepository: MediaRepository = {
-  async getSession(id) {
-    const rows = await db
-      .select({
-        id: chatSessions.id,
-        sessionType: chatSessions.sessionType,
-        userAId: chatSessions.userAId,
-        userBId: chatSessions.userBId,
-        expiresAt: chatSessions.expiresAt,
-        status: chatSessions.status,
-      })
-      .from(chatSessions)
-      .where(eq(chatSessions.id, id))
-      .limit(1);
-    return rows[0] ?? null;
-  },
-  async getAsset(id) {
-    const rows = await db.select().from(mediaAssets).where(eq(mediaAssets.id, id)).limit(1);
-    if (!rows[0]) return null;
-    return {
-      ...rows[0],
-      verifiedMime: rows[0].verifiedMime ?? null,
-      finalizedAt: rows[0].finalizedAt ?? null,
-      revokedAt: rows[0].revokedAt ?? null,
-    };
-  },
-  async listExpiredAssets(now) {
-    const stalePendingThreshold = new Date(now.getTime() - ORPHAN_UPLOAD_TTL_MS);
-    return db
-      .select({ id: mediaAssets.id, sessionId: mediaAssets.sessionId, objectKey: mediaAssets.objectKey })
-      .from(mediaAssets)
-      .where(
-        or(
-          isNotNull(mediaAssets.revokedAt),
-          lte(mediaAssets.expiresAt, now),
-          eq(mediaAssets.status, 'FAILED'),
-          and(eq(mediaAssets.status, 'PENDING_UPLOAD'), lt(mediaAssets.createdAt, stalePendingThreshold))
-        )
-      );
-  },
-  async deleteAsset(id) {
-    await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
-  },
-  async insertAsset(asset) {
-    await db.insert(mediaAssets).values({
-      id: asset.id,
-      sessionId: asset.sessionId,
-      ownerId: asset.ownerId,
-      recipientId: asset.recipientId,
-      objectKey: asset.objectKey,
-      mediaType: asset.mediaType,
-      contentType: asset.contentType,
-      fileSize: asset.fileSize,
-      encryptedDek: asset.encryptedDek,
-      iv: asset.iv,
-      authTag: asset.authTag,
-      status: asset.status,
-      verifiedMime: asset.verifiedMime,
-      finalizedAt: asset.finalizedAt,
-      isAdult: asset.isAdult,
-      senderConfirmed18Plus: asset.senderConfirmed18Plus,
-      senderConfirmedConsent: asset.senderConfirmedConsent,
-      watermarkToken: asset.watermarkToken,
-      expiresAt: asset.expiresAt,
-      revokedAt: asset.revokedAt,
-    });
-  },
-  async updateAssetStatus(id, patch) {
-    await db
-      .update(mediaAssets)
-      .set({
-        status: patch.status,
-        ...(patch.fileSize !== undefined ? { fileSize: patch.fileSize } : {}),
-        ...(patch.verifiedMime !== undefined ? { verifiedMime: patch.verifiedMime } : {}),
-        ...(patch.finalizedAt !== undefined ? { finalizedAt: patch.finalizedAt } : {}),
-      })
-      .where(eq(mediaAssets.id, id));
-  },
-  async getConsent(sessionId, recipientId) {
-    const rows = await db
-      .select({ sessionId: mediaConsents.sessionId, recipientId: mediaConsents.recipientId, enabled: mediaConsents.enabled })
-      .from(mediaConsents)
-      .where(and(eq(mediaConsents.sessionId, sessionId), eq(mediaConsents.recipientId, recipientId)))
-      .limit(1);
-    return rows[0] ?? null;
-  },
-  async upsertConsent(sessionId, recipientId, enabled) {
-    const now = new Date();
-    await db
-      .insert(mediaConsents)
-      .values({ sessionId, recipientId, enabled, grantedAt: enabled ? now : null, revokedAt: enabled ? null : now, updatedAt: now })
-      .onConflictDoUpdate({
-        target: [mediaConsents.sessionId, mediaConsents.recipientId],
-        set: { enabled, grantedAt: enabled ? now : null, revokedAt: enabled ? null : now, updatedAt: now },
-      });
-  },
-  async getAdultConsent(sessionId, recipientId) {
-    const rows = await db
-      .select({
-        sessionId: adultConsents.sessionId,
-        recipientId: adultConsents.recipientId,
-        enabled: adultConsents.enabled,
-        policyAcknowledgedAt: adultConsents.policyAcknowledgedAt,
-      })
-      .from(adultConsents)
-      .where(and(eq(adultConsents.sessionId, sessionId), eq(adultConsents.recipientId, recipientId)))
-      .limit(1);
-    return rows[0] ?? null;
-  },
-  async upsertAdultConsent(sessionId, recipientId, enabled, policyAcknowledged) {
-    const now = new Date();
-    await db
-      .insert(adultConsents)
-      .values({
-        sessionId,
-        recipientId,
-        enabled,
-        policyAcknowledgedAt: policyAcknowledged ? now : null,
-        grantedAt: enabled ? now : null,
-        revokedAt: enabled ? null : now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [adultConsents.sessionId, adultConsents.recipientId],
-        set: {
-          enabled,
-          ...(policyAcknowledged ? { policyAcknowledgedAt: now } : {}),
-          grantedAt: enabled ? now : null,
-          revokedAt: enabled ? null : now,
-          updatedAt: now,
-        },
-      });
-  },
-  async areFriends(userAId, userBId) {
-    const [row] = await db
-      .select({ id: friendships.id })
-      .from(friendships)
-      .where(
-        or(
-          and(eq(friendships.user1Id, userAId), eq(friendships.user2Id, userBId)),
-          and(eq(friendships.user1Id, userBId), eq(friendships.user2Id, userAId))
-        )
-      )
-      .limit(1);
-    return Boolean(row);
-  },
-  async isBlocked(userAId, userBId) {
-    const [row] = await db
-      .select({ id: blockedUsers.id })
-      .from(blockedUsers)
-      .where(
-        or(
-          and(eq(blockedUsers.blockerId, userAId), eq(blockedUsers.blockedId, userBId)),
-          and(eq(blockedUsers.blockerId, userBId), eq(blockedUsers.blockedId, userAId))
-        )
-      )
-      .limit(1);
-    return Boolean(row);
-  },
-  async getSafeRecipientLabel(userId) {
-    const [prof] = await db
-      .select({ nickname: profiles.nickname })
-      .from(profiles)
-      .where(eq(profiles.userId, userId))
-      .limit(1);
-    const cleaned = (prof?.nickname || 'Thành viên').replace(/[\r\n<>]/g, '').trim();
-    return cleaned.slice(0, 20) || 'Thành viên';
-  },
-  async insertToken(token) {
-    await db.insert(mediaViewTokens).values({
-      mediaId: token.mediaId,
-      recipientId: token.recipientId,
-      tokenHash: token.tokenHash,
-      traceCode: token.traceCode ?? null,
-      watermarkText: token.watermarkText ?? null,
-      streamKeyWrapped: token.streamKeyWrapped ?? null,
-      expiresAt: token.expiresAt,
-      revokedAt: token.revokedAt,
-    });
-  },
-  async getToken(tokenHash) {
-    const rows = await db
-      .select({
-        mediaId: mediaViewTokens.mediaId,
-        recipientId: mediaViewTokens.recipientId,
-        tokenHash: mediaViewTokens.tokenHash,
-        traceCode: mediaViewTokens.traceCode,
-        watermarkText: mediaViewTokens.watermarkText,
-        streamKeyWrapped: mediaViewTokens.streamKeyWrapped,
-        expiresAt: mediaViewTokens.expiresAt,
-        revokedAt: mediaViewTokens.revokedAt,
-      })
-      .from(mediaViewTokens)
-      .where(eq(mediaViewTokens.tokenHash, tokenHash))
-      .limit(1);
-    return rows[0] ? { ...rows[0], revokedAt: rows[0].revokedAt ?? null } : null;
-  },
-  async revokeAsset(mediaId, at) {
-    await db.update(mediaAssets).set({ revokedAt: at }).where(eq(mediaAssets.id, mediaId));
-    await db.update(mediaViewTokens).set({ revokedAt: at }).where(eq(mediaViewTokens.mediaId, mediaId));
-  },
-  async isEvidence(mediaId) {
-    const [direct] = await db
-      .select({ id: reportEvidence.id })
-      .from(reportEvidence)
-      .where(eq(reportEvidence.messageId, mediaId))
-      .limit(1);
-    if (direct) return true;
-
-    const [viaMessage] = await db
-      .select({ id: reportEvidence.id })
-      .from(reportEvidence)
-      .innerJoin(messages, eq(reportEvidence.messageId, messages.id))
-      .where(
-        or(
-          sql`${messages.metadata}->>'mediaId' = ${mediaId}`,
-          sql`${messages.metadata}->>'media_id' = ${mediaId}`
-        )
-      )
-      .limit(1);
-    return Boolean(viaMessage);
-  },
-  async getUserStatus(userId: string) {
-    const [user] = await db
-      .select({ status: users.status })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    return user?.status ?? null;
-  },
-  async getWatermarkedVariant(mediaId: string, recipientId: string) {
-    const [row] = await db
-      .select()
-      .from(mediaWatermarkedVariants)
-      .where(and(eq(mediaWatermarkedVariants.mediaId, mediaId), eq(mediaWatermarkedVariants.recipientId, recipientId)))
-      .limit(1);
-    return row ?? null;
-  },
-  async upsertWatermarkedVariant(variant) {
-    const now = new Date();
-    await db
-      .insert(mediaWatermarkedVariants)
-      .values({
-        mediaId: variant.mediaId,
-        recipientId: variant.recipientId,
-        objectKey: variant.objectKey,
-        encryptedDek: variant.encryptedDek,
-        iv: variant.iv,
-        authTag: variant.authTag,
-        contentType: variant.contentType,
-        fileSize: variant.fileSize,
-        traceCode: variant.traceCode,
-        watermarkText: variant.watermarkText,
-        status: variant.status,
-        error: variant.error ?? null,
-        expiresAt: variant.expiresAt,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [mediaWatermarkedVariants.mediaId, mediaWatermarkedVariants.recipientId],
-        set: {
-          objectKey: variant.objectKey,
-          encryptedDek: variant.encryptedDek,
-          iv: variant.iv,
-          authTag: variant.authTag,
-          contentType: variant.contentType,
-          fileSize: variant.fileSize,
-          traceCode: variant.traceCode,
-          watermarkText: variant.watermarkText,
-          status: variant.status,
-          error: variant.error ?? null,
-          expiresAt: variant.expiresAt,
-          updatedAt: now,
-        },
-      });
-  },
-  async listWatermarkedVariantsForMedia(mediaId: string) {
-    return db
-      .select({ objectKey: mediaWatermarkedVariants.objectKey })
-      .from(mediaWatermarkedVariants)
-      .where(eq(mediaWatermarkedVariants.mediaId, mediaId));
-  },
-};
-
-export function createDefaultMediaRepository(): MediaRepository {
-  return defaultRepository;
-}
-
-class S3ObjectStore implements MediaObjectStore {
-  private readonly client: S3Client | null;
-  private readonly bucket: string;
-  constructor() {
-    const storage = config.objectStorage;
-    this.bucket = storage.bucket;
-    this.client =
-      storage.endpoint && storage.accessKeyId && storage.secretAccessKey && this.bucket
-        ? new S3Client({
-            endpoint: storage.endpoint,
-            region: storage.region,
-            forcePathStyle: storage.forcePathStyle,
-            credentials: { accessKeyId: storage.accessKeyId, secretAccessKey: storage.secretAccessKey },
-          })
-        : null;
-  }
-  private getClient(): S3Client {
-    if (!this.client) throw new MediaError(503, 'Media object storage is not configured.');
-    return this.client;
-  }
-  async presignPut(input: { key: string; contentType: string; contentLength: number; mediaId: string }): Promise<string> {
-    return getSignedUrl(
-      this.getClient(),
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: input.key,
-        ContentType: 'application/octet-stream',
-        ContentLength: input.contentLength,
-        Metadata: { 'media-id': input.mediaId },
-      }),
-      { expiresIn: 900 }
-    );
-  }
-  async putStream(input: {
-    key: string;
-    body: NodeJS.ReadableStream | Buffer;
-    contentType: string;
-    contentLength: number;
-  }): Promise<void> {
-    const client = this.getClient();
-    await client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: input.key,
-        Body: input.body as never,
-        ContentType: input.contentType,
-        ContentLength: input.contentLength,
-      })
-    );
-  }
-  async head(key: string): Promise<{ exists: boolean; contentLength?: number; contentType?: string }> {
-    const client = this.getClient();
-    try {
-      const res = await client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
-      return { exists: true, contentLength: res.ContentLength, contentType: res.ContentType };
-    } catch (error) {
-      const storageError = error as { $metadata?: { httpStatusCode?: number }; name?: string };
-      const status = storageError.$metadata?.httpStatusCode;
-      if (status === 404 || storageError.name === 'NotFound') return { exists: false };
-      throw new MediaError(503, 'Media object storage is unavailable.');
-    }
-  }
-  async exists(key: string): Promise<boolean> {
-    const info = await this.head(key);
-    return info.exists;
-  }
-  async delete(key: string): Promise<void> {
-    const client = this.getClient();
-    try {
-      await client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
-    } catch {
-      throw new MediaError(503, 'Media object storage is unavailable.');
-    }
-  }
-  async get(key: string): Promise<{ body: unknown; contentType?: string; contentLength?: number }> {
-    const result = await this.getClient().send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-    return { body: result.Body, contentType: result.ContentType, contentLength: result.ContentLength };
-  }
-}
-
-export function createDefaultObjectStore(): MediaObjectStore {
-  return new S3ObjectStore();
-}
+export * from './media.types.js';
+export { createDefaultMediaRepository } from './media.repository.js';
+export { S3ObjectStore, createDefaultObjectStore } from './media.object-store.js';
 
 export interface MediaServiceOptions {
   repository?: MediaRepository;
@@ -562,84 +49,27 @@ export class MediaService {
   private readonly kms: IKmsProvider;
   private readonly videoQueue?: VideoWatermarkQueue;
   private readonly imageSemaphore: SharpProcessingSemaphore;
+  private readonly policy: MediaPolicyHelper;
 
   constructor(options: MediaServiceOptions = {}) {
-    this.repository = options.repository ?? defaultRepository;
-    this.storage = options.storage ?? new S3ObjectStore();
+    this.repository = options.repository ?? createDefaultMediaRepository();
+    this.storage = options.storage ?? createDefaultObjectStore();
     this.kms = options.kms ?? createConfiguredKms().kms;
     this.videoQueue = options.videoQueue;
     this.imageSemaphore = options.imageSemaphore ?? defaultImageSemaphore;
-  }
-
-  private async assertUserActive(userId: string): Promise<void> {
-    if (this.repository.getUserStatus) {
-      const status = await this.repository.getUserStatus(userId);
-      if (status && (status === 'RESTRICTED' || status === 'DELETED')) {
-        throw new MediaError(403, 'Tài khoản đã bị khóa hoặc đình chỉ do vi phạm chính sách cộng đồng.');
-      }
-    }
+    this.policy = new MediaPolicyHelper(this.repository);
   }
 
   async hasMediaConsent(sessionId: string, recipientId: string): Promise<boolean> {
-    return this.consentIsValid(sessionId, recipientId);
+    return this.policy.consentIsValid(sessionId, recipientId);
   }
 
   async hasAdultConsent(sessionId: string, recipientId: string): Promise<boolean> {
-    return this.adultConsentIsValid(sessionId, recipientId);
-  }
-
-  private async sessionForParticipant(sessionId: string, userId: string): Promise<SessionRow> {
-    const session = await this.repository.getSession(sessionId);
-    if (!session || (session.userAId !== userId && session.userBId !== userId)) {
-      throw new MediaError(403, 'Bạn không thuộc phiên trò chuyện này.');
-    }
-    if (session.expiresAt.getTime() <= Date.now()) {
-      throw new MediaError(410, 'Phiên trò chuyện đã hết hạn.');
-    }
-    return session;
-  }
-
-  private otherParticipant(session: SessionRow, userId: string): string {
-    if (session.userAId === userId) return session.userBId;
-    if (session.userBId === userId) return session.userAId;
-    throw new MediaError(403, 'Bạn không thuộc phiên trò chuyện này.');
-  }
-
-  private async assertNotBlocked(userAId: string, userBId: string): Promise<void> {
-    if (this.repository.isBlocked && (await this.repository.isBlocked(userAId, userBId))) {
-      throw new MediaError(403, 'Không thể gửi hoặc xem media vì tồn tại trạng thái chặn giữa hai tài khoản.');
-    }
-  }
-
-  private async consentIsValid(sessionId: string, recipientId: string, session?: SessionRow): Promise<boolean> {
-    const targetSession = session ?? (await this.repository.getSession(sessionId));
-    if (!targetSession) return false;
-    if (targetSession.sessionType === 'FRIEND') {
-      const other = targetSession.userAId === recipientId ? targetSession.userBId : targetSession.userAId;
-      if (this.repository.isBlocked && (await this.repository.isBlocked(recipientId, other))) return false;
-      if (this.repository.areFriends) {
-        return this.repository.areFriends(recipientId, other);
-      }
-      return true;
-    }
-    const consent = await this.repository.getConsent(sessionId, recipientId);
-    return consent?.enabled === true;
-  }
-
-  private async adultConsentIsValid(sessionId: string, recipientId: string): Promise<boolean> {
-    if (!this.repository.getAdultConsent) return false;
-    const consent = await this.repository.getAdultConsent(sessionId, recipientId);
-    return consent?.enabled === true;
+    return this.policy.adultConsentIsValid(sessionId, recipientId);
   }
 
   async setConsent(userId: string, sessionId: string, enabled: boolean, requestedRecipientId?: string): Promise<void> {
-    await this.assertUserActive(userId);
-    const session = await this.sessionForParticipant(sessionId, userId);
-    if (requestedRecipientId && requestedRecipientId !== userId) {
-      throw new MediaError(403, 'Chỉ người nhận mới có thể thay đổi quyền nhận media.');
-    }
-    this.otherParticipant(session, userId);
-    await this.repository.upsertConsent(sessionId, userId, enabled);
+    return this.policy.setConsent(userId, sessionId, enabled, requestedRecipientId);
   }
 
   async setAdultConsent(
@@ -649,22 +79,7 @@ export class MediaService {
     policyAcknowledged = false,
     requestedRecipientId?: string
   ): Promise<void> {
-    await this.assertUserActive(userId);
-    const session = await this.sessionForParticipant(sessionId, userId);
-    if (requestedRecipientId && requestedRecipientId !== userId) {
-      throw new MediaError(403, 'Chỉ người nhận mới có thể thay đổi quyền nhận nội dung nhạy cảm.');
-    }
-    this.otherParticipant(session, userId);
-    if (enabled && !policyAcknowledged) {
-      throw new MediaError(
-        400,
-        'Bạn cần xác nhận đã hiểu chính sách nội dung 18+ và giới hạn không thể chống chụp màn hình trước khi bật.'
-      );
-    }
-    if (!this.repository.upsertAdultConsent) {
-      throw new MediaError(501, 'Kho lưu trữ chưa hỗ trợ cấu hình đồng thuận nội dung nhạy cảm.');
-    }
-    await this.repository.upsertAdultConsent(sessionId, userId, enabled, policyAcknowledged);
+    return this.policy.setAdultConsent(userId, sessionId, enabled, policyAcknowledged, requestedRecipientId);
   }
 
   async getConsentState(
@@ -676,16 +91,7 @@ export class MediaService {
     myAdultConsent: boolean;
     partnerAdultConsent: boolean;
   }> {
-    await this.assertUserActive(userId);
-    const session = await this.sessionForParticipant(sessionId, userId);
-    const partnerId = this.otherParticipant(session, userId);
-    const [myMediaConsent, partnerMediaConsent, myAdultConsent, partnerAdultConsent] = await Promise.all([
-      this.consentIsValid(sessionId, userId, session),
-      this.consentIsValid(sessionId, partnerId, session),
-      this.adultConsentIsValid(sessionId, userId),
-      this.adultConsentIsValid(sessionId, partnerId),
-    ]);
-    return { myMediaConsent, partnerMediaConsent, myAdultConsent, partnerAdultConsent };
+    return this.policy.getConsentState(userId, sessionId);
   }
 
   async cleanupExpiredAssets(now: Date = new Date()): Promise<{ deletedCount: number; failedCount: number; failedSessionIds: string[] }> {
@@ -733,17 +139,17 @@ export class MediaService {
       senderConfirmedConsent?: boolean;
     }
   ): Promise<{ mediaId: string; uploadUrl: string; expiresAt: Date }> {
-    await this.assertUserActive(userId);
-    const session = await this.sessionForParticipant(input.sessionId, userId);
+    await this.policy.assertUserActive(userId);
+    const session = await this.policy.sessionForParticipant(input.sessionId, userId);
     if (session.sessionType === 'RANDOM' && session.status !== 'ACTIVE') {
       throw new MediaError(409, 'Phiên chat ngẫu nhiên đã kết thúc.');
     }
-    if (input.recipientId === userId || input.recipientId !== this.otherParticipant(session, userId)) {
+    if (input.recipientId === userId || input.recipientId !== this.policy.otherParticipant(session, userId)) {
       throw new MediaError(403, 'Người nhận không thuộc phiên trò chuyện này.');
     }
-    await this.assertNotBlocked(userId, input.recipientId);
+    await this.policy.assertNotBlocked(userId, input.recipientId);
 
-    if (!(await this.consentIsValid(input.sessionId, input.recipientId, session))) {
+    if (!(await this.policy.consentIsValid(input.sessionId, input.recipientId, session))) {
       throw new MediaError(403, 'Người nhận chưa bật quyền nhận media.');
     }
 
@@ -764,7 +170,7 @@ export class MediaService {
           'Gửi nội dung người lớn bắt buộc phải xác nhận người xuất hiện từ 18+ và có sự đồng thuận hợp pháp.'
         );
       }
-      if (!(await this.adultConsentIsValid(input.sessionId, input.recipientId))) {
+      if (!(await this.policy.adultConsentIsValid(input.sessionId, input.recipientId))) {
         throw new MediaError(403, 'Đối phương chưa bật quyền nhận nội dung nhạy cảm (18+).');
       }
     }
@@ -855,7 +261,7 @@ export class MediaService {
     userId: string,
     mediaId: string
   ): Promise<{ mediaId: string; status: MediaStatus; fileSize: number; verifiedMime: string }> {
-    await this.assertUserActive(userId);
+    await this.policy.assertUserActive(userId);
     const asset = await this.repository.getAsset(mediaId);
     if (!asset || asset.revokedAt || asset.expiresAt.getTime() <= Date.now()) {
       throw new MediaError(404, 'Media không tồn tại hoặc đã hết hạn.');
@@ -875,16 +281,16 @@ export class MediaService {
       throw new MediaError(409, 'Trạng thái tải lên media không hợp lệ.');
     }
 
-    const session = await this.sessionForParticipant(asset.sessionId, userId);
+    const session = await this.policy.sessionForParticipant(asset.sessionId, userId);
     if (session.sessionType === 'RANDOM' && session.status !== 'ACTIVE') {
       return this.failAndDeleteUpload(asset, new MediaError(409, 'Phiên chat đã kết thúc trong lúc tải media.'));
     }
-    await this.assertNotBlocked(asset.ownerId, asset.recipientId);
+    await this.policy.assertNotBlocked(asset.ownerId, asset.recipientId);
 
-    if (!(await this.consentIsValid(asset.sessionId, asset.recipientId, session))) {
+    if (!(await this.policy.consentIsValid(asset.sessionId, asset.recipientId, session))) {
       return this.failAndDeleteUpload(asset, new MediaError(403, 'Người nhận đã tắt quyền nhận media.'));
     }
-    if (asset.isAdult && !(await this.adultConsentIsValid(asset.sessionId, asset.recipientId))) {
+    if (asset.isAdult && !(await this.policy.adultConsentIsValid(asset.sessionId, asset.recipientId))) {
       return this.failAndDeleteUpload(asset, new MediaError(403, 'Người nhận đã tắt quyền nhận nội dung 18+.'));
     }
 
@@ -1021,44 +427,7 @@ export class MediaService {
     mediaType: MediaType;
     isAdultContent: boolean;
   }): Promise<MediaAssetRow> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.mediaId)) {
-      throw new MediaError(400, 'Mã media không hợp lệ.');
-    }
-    const asset = await this.repository.getAsset(input.mediaId);
-    if (!asset || asset.revokedAt || asset.expiresAt.getTime() <= Date.now()) {
-      throw new MediaError(404, 'Media không tồn tại, đã thu hồi hoặc hết hạn.');
-    }
-    if (asset.status !== 'READY') {
-      throw new MediaError(409, 'Media chưa hoàn tất xác thực tải lên.');
-    }
-    if (
-      asset.sessionId !== input.sessionId ||
-      asset.ownerId !== input.senderId ||
-      asset.recipientId !== input.recipientId
-    ) {
-      throw new MediaError(403, 'Media không khớp người gửi, người nhận hoặc phiên trò chuyện.');
-    }
-    if (asset.mediaType !== input.mediaType) {
-      throw new MediaError(400, 'Loại media tin nhắn không khớp với tệp đã tải lên.');
-    }
-    if (asset.isAdult !== input.isAdultContent) {
-      throw new MediaError(400, 'Cờ nội dung người lớn (18+) không khớp với media đã xác thực.');
-    }
-
-    const session = await this.sessionForParticipant(input.sessionId, input.senderId);
-    if (!(await this.consentIsValid(input.sessionId, input.recipientId, session))) {
-      throw new MediaError(403, 'Người nhận đã tắt quyền nhận media.');
-    }
-    if (asset.isAdult) {
-      if (!asset.senderConfirmed18Plus || !asset.senderConfirmedConsent) {
-        throw new MediaError(403, 'Thiếu cam kết hợp pháp của người gửi cho nội dung 18+.');
-      }
-      if (!(await this.adultConsentIsValid(input.sessionId, input.recipientId))) {
-        throw new MediaError(403, 'Người nhận đã tắt quyền nhận nội dung nhạy cảm (18+).');
-      }
-    }
-
-    return asset;
+    return this.policy.verifyDeliverableMedia(input);
   }
 
   async issueViewToken(
@@ -1076,7 +445,7 @@ export class MediaService {
     iv: string;
     authTag: string;
   }> {
-    await this.assertUserActive(userId);
+    await this.policy.assertUserActive(userId);
     const asset = await this.repository.getAsset(mediaId);
     if (!asset || asset.revokedAt || asset.expiresAt.getTime() <= Date.now()) {
       throw new MediaError(404, 'Media không tồn tại hoặc đã hết hạn.');
@@ -1084,19 +453,19 @@ export class MediaService {
     if (asset.status !== 'READY') {
       throw new MediaError(409, 'Media chưa sẵn sàng để xem.');
     }
-    const session = await this.sessionForParticipant(asset.sessionId, userId);
+    const session = await this.policy.sessionForParticipant(asset.sessionId, userId);
     if (session.userAId !== asset.ownerId && session.userBId !== asset.ownerId) {
       throw new MediaError(403, 'Media không thuộc phiên hợp lệ.');
     }
     if (userId !== asset.ownerId && userId !== asset.recipientId) {
       throw new MediaError(403, 'Bạn không có quyền xem media này.');
     }
-    await this.assertNotBlocked(asset.ownerId, asset.recipientId);
+    await this.policy.assertNotBlocked(asset.ownerId, asset.recipientId);
 
-    if (!(await this.consentIsValid(asset.sessionId, asset.recipientId, session))) {
+    if (!(await this.policy.consentIsValid(asset.sessionId, asset.recipientId, session))) {
       throw new MediaError(403, 'Quyền nhận media đã bị thu hồi.');
     }
-    if (asset.isAdult && !(await this.adultConsentIsValid(asset.sessionId, asset.recipientId))) {
+    if (asset.isAdult && !(await this.policy.adultConsentIsValid(asset.sessionId, asset.recipientId))) {
       throw new MediaError(403, 'Quyền nhận nội dung nhạy cảm (18+) đã bị thu hồi.');
     }
     if (!(await this.storage.exists(asset.objectKey))) {
@@ -1335,7 +704,7 @@ export class MediaService {
     mediaContentType?: string;
     watermarked?: boolean;
   }> {
-    await this.assertUserActive(userId);
+    await this.policy.assertUserActive(userId);
     if (!rawToken || rawToken.length < 20) throw new MediaError(401, 'View token không hợp lệ.');
     const token = await this.repository.getToken(crypto.createHash('sha256').update(rawToken).digest('hex'));
     const asset = await this.repository.getAsset(mediaId);
@@ -1352,19 +721,19 @@ export class MediaService {
     if (asset.status !== 'READY') {
       throw new MediaError(409, 'Media chưa hoàn tất xác thực.');
     }
-    const session = await this.sessionForParticipant(asset.sessionId, userId);
+    const session = await this.policy.sessionForParticipant(asset.sessionId, userId);
     if (session.userAId !== userId && session.userBId !== userId) {
       throw new MediaError(403, 'Bạn không thuộc phiên trò chuyện này.');
     }
-    await this.assertNotBlocked(asset.ownerId, asset.recipientId);
+    await this.policy.assertNotBlocked(asset.ownerId, asset.recipientId);
 
     if (asset.revokedAt || asset.expiresAt.getTime() <= Date.now()) {
       throw new MediaError(403, 'Media đã bị thu hồi hoặc hết hạn.');
     }
-    if (!(await this.consentIsValid(asset.sessionId, asset.recipientId, session))) {
+    if (!(await this.policy.consentIsValid(asset.sessionId, asset.recipientId, session))) {
       throw new MediaError(403, 'Quyền nhận media đã bị thu hồi.');
     }
-    if (asset.isAdult && !(await this.adultConsentIsValid(asset.sessionId, asset.recipientId))) {
+    if (asset.isAdult && !(await this.policy.adultConsentIsValid(asset.sessionId, asset.recipientId))) {
       throw new MediaError(403, 'Quyền nhận nội dung nhạy cảm (18+) đã bị thu hồi.');
     }
 
@@ -1531,8 +900,26 @@ export class MediaService {
     }
   }
 
+  async getMediaStatus(
+    userId: string,
+    mediaId: string
+  ): Promise<{ mediaId: string; status: string; revoked: boolean; expired: boolean }> {
+    await this.policy.assertUserActive(userId);
+    const asset = await this.repository.getAsset(mediaId);
+    if (!asset) throw new MediaError(404, 'Media không tồn tại.');
+    if (asset.ownerId !== userId && asset.recipientId !== userId) {
+      throw new MediaError(403, 'Bạn không có quyền truy cập trạng thái media này.');
+    }
+    return {
+      mediaId: asset.id,
+      status: asset.status,
+      revoked: Boolean(asset.revokedAt),
+      expired: asset.expiresAt.getTime() <= Date.now(),
+    };
+  }
+
   async revoke(userId: string, mediaId: string): Promise<void> {
-    await this.assertUserActive(userId);
+    await this.policy.assertUserActive(userId);
     const asset = await this.repository.getAsset(mediaId);
     if (!asset) throw new MediaError(404, 'Media không tồn tại.');
     if (asset.ownerId !== userId) throw new MediaError(403, 'Chỉ người gửi mới có thể thu hồi media.');

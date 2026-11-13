@@ -1,5 +1,5 @@
 import { Gender, MessageType } from '@chatible/shared';
-import { and, desc, eq, gt, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { db } from '../database/index.js';
 import { chatSessions } from '../database/schema/sessions.js';
@@ -7,9 +7,13 @@ import { friendships, friendRequests, blockedUsers } from '../database/schema/fr
 import { messages } from '../database/schema/messages.js';
 import { profiles, users } from '../database/schema/users.js';
 import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
+import { ApiError } from '../http/api-error.js';
 import { MediaService } from '../media/media.service.js';
 const isUuid = (value: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+export const DEFAULT_FRIEND_MESSAGES_PAGE_SIZE = 40;
+export const MAX_FRIEND_MESSAGES_PAGE_SIZE = 100;
 
 export interface FriendSummary {
   id: string;
@@ -41,6 +45,17 @@ export interface FriendMessageDto {
   isAdultContent?: boolean;
   sentAt: string;
   expiresAt: string; // 30 days after sent
+}
+
+export interface FriendConversationPage {
+  messages: FriendMessageDto[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface FriendConversationPaginationOptions {
+  before?: string;
+  limit?: number;
 }
 
 export interface SendFriendMessageInput {
@@ -381,10 +396,26 @@ export class FriendsService {
       .select()
       .from(friendships)
       .where(or(eq(friendships.user1Id, userId), eq(friendships.user2Id, userId)));
+    if (rows.length === 0) return [];
+
+    const friendIds = Array.from(
+      new Set(rows.map((row) => (row.user1Id === userId ? row.user2Id : row.user1Id)))
+    );
+    const friendProfiles = await db
+      .select({
+        userId: profiles.userId,
+        nickname: profiles.nickname,
+        gender: profiles.gender,
+        calculatedAge: profiles.calculatedAge,
+      })
+      .from(profiles)
+      .where(inArray(profiles.userId, friendIds));
+
+    const profileMap = new Map(friendProfiles.map((p) => [p.userId, p]));
     const result: FriendSummary[] = [];
     for (const row of rows) {
       const friendId = row.user1Id === userId ? row.user2Id : row.user1Id;
-      const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, friendId) });
+      const profile = profileMap.get(friendId);
       if (!profile) continue;
       result.push({
         id: row.id,
@@ -670,13 +701,42 @@ export class FriendsService {
     return dto;
   }
 
-  async getConversation(userA: string, userB: string): Promise<FriendMessageDto[]> {
-    await this.assertUserActive(userA);
-    if (!(await this.isFriend(userA, userB))) {
-      throw new Error('Chỉ bạn bè mới có thể xem cuộc trò chuyện này.');
-    }
+  private encodeConversationCursor(acceptedAt: Date, id: string): string {
+    return Buffer.from(JSON.stringify({ t: acceptedAt.toISOString(), id }), 'utf8').toString('base64url');
+  }
 
-    const now = new Date();
+  private decodeConversationCursor(cursor: string): { acceptedAt: Date; id: string } {
+    try {
+      const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+        t?: unknown;
+        id?: unknown;
+      };
+      if (typeof parsed.t !== 'string' || typeof parsed.id !== 'string' || !isUuid(parsed.id)) {
+        throw new Error('Malformed cursor fields');
+      }
+      const acceptedAt = new Date(parsed.t);
+      if (Number.isNaN(acceptedAt.getTime())) {
+        throw new Error('Malformed cursor timestamp');
+      }
+      return { acceptedAt, id: parsed.id };
+    } catch {
+      throw ApiError.badRequest('Cursor phân trang không hợp lệ.');
+    }
+  }
+
+  private normalizeConversationLimit(limit?: number): number {
+    if (limit === undefined) return DEFAULT_FRIEND_MESSAGES_PAGE_SIZE;
+    if (!Number.isFinite(limit) || Math.floor(limit) < 1) {
+      throw ApiError.badRequest('Giới hạn phân trang phải là số nguyên dương.');
+    }
+    return Math.min(MAX_FRIEND_MESSAGES_PAGE_SIZE, Math.floor(limit));
+  }
+
+  private async findActiveFriendSession(
+    userA: string,
+    userB: string,
+    now: Date
+  ): Promise<{ id: string; userAId: string; userBId: string } | null> {
     const [session] = await db
       .select({ id: chatSessions.id, userAId: chatSessions.userAId, userBId: chatSessions.userBId })
       .from(chatSessions)
@@ -693,14 +753,13 @@ export class FriendsService {
       )
       .orderBy(desc(chatSessions.startedAt))
       .limit(1);
-    if (!session) return [];
+    return session ?? null;
+  }
 
-    const rows = await db
-      .select()
-      .from(messages)
-      .where(and(eq(messages.sessionId, session.id), gt(messages.expiresAt, now)))
-      .orderBy(messages.acceptedAt);
-
+  private async decryptFriendMessages(
+    session: { id: string; userAId: string; userBId: string },
+    rows: Array<typeof messages.$inferSelect>
+  ): Promise<FriendMessageDto[]> {
     return Promise.all(
       rows.map(async (message) => ({
         id: message.id,
@@ -720,5 +779,78 @@ export class FriendsService {
         expiresAt: message.expiresAt.toISOString(),
       }))
     );
+  }
+
+  /**
+   * Fetches one chronological page of non-expired friend messages using keyset
+   * pagination (`before` cursor) so only the visible slice is loaded and decrypted.
+   */
+  async getConversationPage(
+    userA: string,
+    userB: string,
+    options: FriendConversationPaginationOptions = {}
+  ): Promise<FriendConversationPage> {
+    await this.assertUserActive(userA);
+    if (!(await this.isFriend(userA, userB))) {
+      throw ApiError.forbidden('Chỉ bạn bè mới có thể xem cuộc trò chuyện này.');
+    }
+
+    const limit = this.normalizeConversationLimit(options.limit);
+    const cursor = options.before ? this.decodeConversationCursor(options.before) : null;
+    const now = new Date();
+    const session = await this.findActiveFriendSession(userA, userB, now);
+    if (!session) {
+      return { messages: [], nextCursor: null, hasMore: false };
+    }
+
+    const cursorCondition = cursor
+      ? or(
+          lt(messages.acceptedAt, cursor.acceptedAt),
+          and(eq(messages.acceptedAt, cursor.acceptedAt), lt(messages.id, cursor.id))
+        )
+      : undefined;
+
+    const descRows = await db
+      .select()
+      .from(messages)
+      .where(
+        cursorCondition
+          ? and(eq(messages.sessionId, session.id), gt(messages.expiresAt, now), cursorCondition)
+          : and(eq(messages.sessionId, session.id), gt(messages.expiresAt, now))
+      )
+      .orderBy(desc(messages.acceptedAt), desc(messages.id))
+      .limit(limit + 1);
+
+    const hasMore = descRows.length > limit;
+    const pageAsc = descRows.slice(0, limit).reverse();
+    const oldestRow = pageAsc[0];
+    const nextCursor = hasMore && oldestRow
+      ? this.encodeConversationCursor(oldestRow.acceptedAt, oldestRow.id)
+      : null;
+
+    return {
+      messages: await this.decryptFriendMessages(session, pageAsc),
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async getConversation(userA: string, userB: string): Promise<FriendMessageDto[]> {
+    await this.assertUserActive(userA);
+    if (!(await this.isFriend(userA, userB))) {
+      throw ApiError.forbidden('Chỉ bạn bè mới có thể xem cuộc trò chuyện này.');
+    }
+
+    const now = new Date();
+    const session = await this.findActiveFriendSession(userA, userB, now);
+    if (!session) return [];
+
+    const rows = await db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.sessionId, session.id), gt(messages.expiresAt, now)))
+      .orderBy(messages.acceptedAt, messages.id);
+
+    return this.decryptFriendMessages(session, rows);
   }
 }

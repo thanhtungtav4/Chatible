@@ -14,6 +14,7 @@ import { db } from '../database/index.js';
 import { chatSessions } from '../database/schema/sessions.js';
 import { messages } from '../database/schema/messages.js';
 import { adultConsents, mediaAssets } from '../database/schema/media.js';
+import { friendships } from '../database/schema/friends.js';
 import { profiles, users } from '../database/schema/users.js';
 
 const cryptoService = new EnvelopeCryptoService(
@@ -334,6 +335,149 @@ describe('Persistent friendship and offline messaging', () => {
     } finally {
       await db.delete(adultConsents).where(eq(adultConsents.recipientId, userB));
       await db.delete(mediaAssets).where(eq(mediaAssets.ownerId, userA));
+      await removeFixtures([userA, userB]);
+    }
+  });
+
+  it('batch loads friend profiles cleanly for empty lists, missing profiles, and multiple friends', async () => {
+    const [me, f1, f2, noProf] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const service = new FriendsService(cryptoService);
+
+    await seedUsers([me, f1, f2]);
+    await db.insert(users).values({ id: noProf, email: `noprof-${noProf}@chatible.test`, status: 'ACTIVE' });
+
+    try {
+      expect(await service.listFriends(me)).toEqual([]);
+
+      await db.insert(friendships).values([
+        { user1Id: me < f1 ? me : f1, user2Id: me < f1 ? f1 : me },
+        { user1Id: me < f2 ? me : f2, user2Id: me < f2 ? f2 : me },
+        { user1Id: me < noProf ? me : noProf, user2Id: me < noProf ? noProf : me },
+      ]);
+
+      const listed = await service.listFriends(me);
+      expect(listed).toHaveLength(2);
+      expect(listed.map((f) => f.userId).sort()).toEqual([f1, f2].sort());
+    } finally {
+      await removeFixtures([me, f1, f2, noProf]);
+    }
+  });
+
+  it('paginates friend message history with keyset cursor without skipping or duplicating tied timestamps', async () => {
+    const [userA, userB] = [randomUUID(), randomUUID()];
+    const friendSessionId = randomUUID();
+    const service = new FriendsService(cryptoService);
+    const app = fastify({ logger: false });
+    await seedUsers([userA, userB]);
+    await db.insert(friendships).values({
+      user1Id: userA < userB ? userA : userB,
+      user2Id: userA < userB ? userB : userA,
+    });
+    await db.insert(chatSessions).values({
+      id: friendSessionId,
+      sessionType: 'FRIEND',
+      userAId: userA,
+      userBId: userB,
+      status: 'ACTIVE',
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    try {
+      const baseTime = new Date(Date.now() - 60_000);
+      const tiedTime = new Date(baseTime.getTime() + 10_000);
+      const tiedIds = [randomUUID(), randomUUID(), randomUUID()].sort();
+      const seededIds = [randomUUID(), ...tiedIds, randomUUID()];
+      // Insert 5 messages: indices 1, 2, 3 share the exact same timestamp to test UUID tie-breaker.
+      const rows = await Promise.all(
+        seededIds.map(async (id, idx) => {
+          const encrypted = await cryptoService.encrypt(`msg-${idx + 1}`);
+          const acceptedAt =
+            idx === 0
+              ? baseTime
+              : idx >= 1 && idx <= 3
+                ? tiedTime
+                : new Date(baseTime.getTime() + 20_000);
+          return {
+            id,
+            sessionId: friendSessionId,
+            senderId: idx % 2 === 0 ? userA : userB,
+            messageType: 'TEXT',
+            encryptedDek: encrypted.encryptedDek,
+            ciphertext: encrypted.ciphertext,
+            iv: encrypted.iv,
+            authTag: encrypted.authTag,
+            acceptedAt,
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          };
+        })
+      );
+      await db.insert(messages).values(rows);
+
+      new FriendsController(service).registerRoutes(app);
+      await app.ready();
+      const tokenA = JwtUtil.sign({ sub: userA, email: 'a@chatible.test' }, config.jwtSecret);
+      const cookieA = `chatible_session=${encodeURIComponent(tokenA)}`;
+
+      const page1Res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/friends/${userB}/messages?limit=2`,
+        headers: { cookie: cookieA },
+      });
+      expect(page1Res.statusCode).toBe(200);
+      const page1 = page1Res.json() as {
+        messages: Array<{ id: string; content: string }>;
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      expect(page1.messages.map((m) => m.content)).toEqual(['msg-4', 'msg-5']);
+      expect(page1.hasMore).toBe(true);
+      expect(page1.nextCursor).toBeTruthy();
+
+      const page2Res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/friends/${userB}/messages?limit=2&before=${encodeURIComponent(page1.nextCursor!)}`,
+        headers: { cookie: cookieA },
+      });
+      expect(page2Res.statusCode).toBe(200);
+      const page2 = page2Res.json() as {
+        messages: Array<{ id: string; content: string }>;
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      expect(page2.messages.map((m) => m.content)).toEqual(['msg-2', 'msg-3']);
+      expect(page2.hasMore).toBe(true);
+      expect(page2.nextCursor).toBeTruthy();
+
+      const page3Res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/friends/${userB}/messages?limit=2&before=${encodeURIComponent(page2.nextCursor!)}`,
+        headers: { cookie: cookieA },
+      });
+      expect(page3Res.statusCode).toBe(200);
+      const page3 = page3Res.json() as {
+        messages: Array<{ id: string; content: string }>;
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      expect(page3.messages.map((m) => m.content)).toEqual(['msg-1']);
+      expect(page3.hasMore).toBe(false);
+      expect(page3.nextCursor).toBeNull();
+
+      const badCursorRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/friends/${userB}/messages?before=not-valid-base64`,
+        headers: { cookie: cookieA },
+      });
+      expect(badCursorRes.statusCode).toBe(400);
+
+      const badLimitRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/friends/${userB}/messages?limit=0`,
+        headers: { cookie: cookieA },
+      });
+      expect(badLimitRes.statusCode).toBe(400);
+    } finally {
+      await app.close();
       await removeFixtures([userA, userB]);
     }
   });

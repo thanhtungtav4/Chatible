@@ -21,6 +21,7 @@ import {
 import { MediaService } from '../media/media.service.js';
 import { AuditTrailService } from './audit.service.js';
 import { tokenRevocationStore } from '../auth/session-auth.util.js';
+import { SafetyNotificationService } from '../safety/notification.service.js';
 
 export interface AdminStats {
   totalUsers: number;
@@ -46,7 +47,8 @@ export class AdminService {
     private readonly cryptoService: EnvelopeCryptoService,
     private readonly superAdminId: string = '00000000-0000-0000-0000-000000000001',
     private readonly mailService: MailService = new MailService({ cryptoService }),
-    private readonly mediaService: MediaService = new MediaService()
+    private readonly mediaService: MediaService = new MediaService(),
+    private readonly notificationService: SafetyNotificationService = new SafetyNotificationService(mailService)
   ) {}
 
   private extractMediaIdFromMessage(content: string, metadata: unknown): string | null {
@@ -487,6 +489,38 @@ export class AdminService {
     return this.auditService.exportImmutableSnapshot();
   }
 
+  async markReportInReview(reportId: string, actorId: string, ipAddress?: string) {
+    if (actorId !== this.superAdminId) {
+      throw new Error('Chỉ Super Admin mới có quyền tiếp nhận xem xét báo cáo.');
+    }
+    return db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(reports)
+        .set({ status: 'IN_REVIEW' })
+        .where(and(eq(reports.id, reportId), eq(reports.status, 'OPEN')))
+        .returning({ id: reports.id, status: reports.status });
+      if (!updated) {
+        const [existing] = await tx
+          .select({ status: reports.status })
+          .from(reports)
+          .where(eq(reports.id, reportId))
+          .limit(1);
+        if (!existing) throw new Error('Báo cáo không tồn tại.');
+        throw new Error('Báo cáo đã được tiếp nhận hoặc đã đóng.');
+      }
+      await this.auditService.recordAudit(
+        {
+          actorId,
+          action: 'REVIEW_REPORT',
+          targetResourceId: updated.id,
+          ipAddress,
+        },
+        tx
+      );
+      return { status: updated.status, reportId: updated.id };
+    });
+  }
+
   async resolveReport(
     reportId: string,
     actorId: string,
@@ -503,7 +537,12 @@ export class AdminService {
 
     const res = await db.transaction(async (tx) => {
       const [report] = await tx
-        .select({ status: reports.status, reportedUserId: reports.reportedUserId })
+        .select({
+          status: reports.status,
+          reporterId: reports.reporterId,
+          reportedUserId: reports.reportedUserId,
+          reason: reports.reason,
+        })
         .from(reports)
         .where(eq(reports.id, reportId))
         .limit(1);
@@ -525,15 +564,47 @@ export class AdminService {
           closedAt,
           expiresAt,
         })
-        .where(eq(reports.id, reportId))
+        .where(and(eq(reports.id, reportId), inArray(reports.status, ['OPEN', 'IN_REVIEW'])))
         .returning({ id: reports.id });
-      if (!updatedReport) throw new Error('Báo cáo không tồn tại.');
+      if (!updatedReport) throw new Error('Báo cáo đã được đóng trước đó.');
 
       if (options?.restrictUser) {
         await tx
           .update(users)
           .set({ status: 'RESTRICTED', updatedAt: closedAt })
           .where(eq(users.id, report.reportedUserId));
+      }
+
+      const reporterMsg =
+        conclusion === 'ACTION_TAKEN'
+          ? 'Đội ngũ an toàn Chatible đã xem xét báo cáo của bạn và áp dụng biện pháp xử lý phù hợp với quy tắc cộng đồng. Trạng thái chặn hai chiều vẫn được duy trì.'
+          : 'Đội ngũ an toàn Chatible đã xem xét báo cáo của bạn. Hiện chưa đủ căn cứ để áp dụng biện pháp hạn chế thêm, tuy nhiên trạng thái chặn giữa hai tài khoản vẫn được giữ nguyên.';
+
+      await this.notificationService.createNotification(
+        {
+          userId: report.reporterId,
+          type: 'REPORT_RESOLVED',
+          title: 'Báo cáo vi phạm đã được xử lý',
+          body: reporterMsg,
+          relatedResourceId: updatedReport.id,
+        },
+        tx
+      );
+
+      let restrictedNoticeBody: string | null = null;
+      if (options?.restrictUser) {
+        // Strictly omit reporter identity, reporter nickname, or identifying context (REPORT-06).
+        restrictedNoticeBody = `Tài khoản của bạn đã bị hạn chế do vi phạm quy tắc cộng đồng (${report.reason}). Nếu bạn cho rằng đây là nhầm lẫn, bạn có thể gửi đơn Khiếu nại trong mục Hồ sơ.`;
+        await this.notificationService.createNotification(
+          {
+            userId: report.reportedUserId,
+            type: 'ACCOUNT_RESTRICTED',
+            title: 'Tài khoản của bạn đã bị hạn chế',
+            body: restrictedNoticeBody,
+            relatedResourceId: updatedReport.id,
+          },
+          tx
+        );
       }
 
       await this.auditService.recordAudit(
@@ -546,12 +617,35 @@ export class AdminService {
         },
         tx
       );
-      return { status: 'RESOLVED', reportId: updatedReport.id, conclusion, reportedUserId: report.reportedUserId };
+      return {
+        status: 'RESOLVED',
+        reportId: updatedReport.id,
+        conclusion,
+        reporterId: report.reporterId,
+        reportedUserId: report.reportedUserId,
+        reporterMsg,
+        restrictedNoticeBody,
+      };
     });
 
     if (options?.restrictUser && res.reportedUserId) {
       await tokenRevocationStore.revokeUserTokensBefore(res.reportedUserId, Date.now());
+      if (res.restrictedNoticeBody) {
+        void this.notificationService.notifyUserByEmail(
+          res.reportedUserId,
+          '[Chatible] Thông báo hạn chế tài khoản',
+          'Tài khoản của bạn đã bị hạn chế',
+          res.restrictedNoticeBody
+        );
+      }
     }
+    void this.notificationService.notifyUserByEmail(
+      res.reporterId,
+      '[Chatible] Báo cáo vi phạm của bạn đã được xử lý',
+      'Báo cáo vi phạm đã được xử lý',
+      res.reporterMsg
+    );
+
     return { status: res.status, reportId: res.reportId, conclusion: res.conclusion };
   }
 
@@ -585,7 +679,7 @@ export class AdminService {
       throw new Error('Chỉ Super Admin mới có quyền duyệt khiếu nại.');
     }
 
-    return db.transaction(async (tx) => {
+    const res = await db.transaction(async (tx) => {
       const [appeal] = await tx
         .select()
         .from(restrictionAppeals)
@@ -598,6 +692,7 @@ export class AdminService {
 
       const status = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
       const now = new Date();
+      const noteText = adminNote || (decision === 'APPROVE' ? 'Đã chấp thuận khiếu nại' : 'Từ chối khiếu nại');
 
       await tx
         .update(restrictionAppeals)
@@ -605,7 +700,7 @@ export class AdminService {
           status,
           reviewedAt: now,
           reviewedBy: actorId,
-          adminNote: adminNote || (decision === 'APPROVE' ? 'Đã chấp thuận khiếu nại' : 'Từ chối khiếu nại'),
+          adminNote: noteText,
         })
         .where(eq(restrictionAppeals.id, appealId));
 
@@ -615,6 +710,24 @@ export class AdminService {
           .set({ status: 'ACTIVE', updatedAt: now })
           .where(eq(users.id, appeal.userId));
       }
+
+      const title =
+        decision === 'APPROVE' ? 'Đơn khiếu nại đã được chấp thuận' : 'Kết quả xem xét đơn khiếu nại';
+      const body =
+        decision === 'APPROVE'
+          ? `Tài khoản của bạn đã được khôi phục trạng thái hoạt động bình thường. Ghi chú: ${noteText}`
+          : `Đơn khiếu nại của bạn chưa được chấp thuận. Trạng thái hạn chế hiện tại vẫn được giữ nguyên. Ghi chú: ${noteText}`;
+
+      await this.notificationService.createNotification(
+        {
+          userId: appeal.userId,
+          type: 'APPEAL_DECISION',
+          title,
+          body,
+          relatedResourceId: appeal.id,
+        },
+        tx
+      );
 
       await this.auditService.recordAudit(
         {
@@ -626,8 +739,17 @@ export class AdminService {
         tx
       );
 
-      return { status, appealId: appeal.id, userId: appeal.userId };
+      return { status, appealId: appeal.id, userId: appeal.userId, title, body };
     });
+
+    void this.notificationService.notifyUserByEmail(
+      res.userId,
+      `[Chatible] ${res.title}`,
+      res.title,
+      res.body
+    );
+
+    return { status: res.status, appealId: res.appealId, userId: res.userId };
   }
 
   async restrictUser(userId: string, actorId: string, reason: string, ipAddress?: string) {
@@ -643,6 +765,18 @@ export class AdminService {
         .returning({ id: users.id });
       if (!user) throw new Error('Không tìm thấy tài khoản cần đình chỉ.');
 
+      const noticeBody = `Tài khoản của bạn đã bị tạm đình chỉ vì vi phạm quy tắc cộng đồng (${reason}). Bạn có thể gửi đơn Khiếu nại trong mục Hồ sơ.`;
+      await this.notificationService.createNotification(
+        {
+          userId: user.id,
+          type: 'ACCOUNT_RESTRICTED',
+          title: 'Tài khoản của bạn đã bị hạn chế',
+          body: noticeBody,
+          relatedResourceId: user.id,
+        },
+        tx
+      );
+
       await this.auditService.recordAudit(
         {
           actorId,
@@ -653,11 +787,17 @@ export class AdminService {
         },
         tx
       );
-      return { status: 'RESTRICTED', userId: user.id, reason };
+      return { status: 'RESTRICTED', userId: user.id, reason, noticeBody };
     });
 
     await tokenRevocationStore.revokeUserTokensBefore(userId, Date.now());
-    return res;
+    void this.notificationService.notifyUserByEmail(
+      res.userId,
+      '[Chatible] Thông báo hạn chế tài khoản',
+      'Tài khoản của bạn đã bị hạn chế',
+      res.noticeBody
+    );
+    return { status: res.status, userId: res.userId, reason: res.reason };
   }
 
   private inferSettingCategory(key: string): string {

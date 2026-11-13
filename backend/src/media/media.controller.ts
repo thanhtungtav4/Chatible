@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type Redis from 'ioredis';
-import { getAuthenticatedClaims } from '../auth/session-auth.util.js';
 import { DistributedRateLimiter } from '../auth/rate-limiter.js';
-import { MediaError, MediaProcessingPendingError, MediaService } from './media.service.js';
-import type { MediaType } from './media.service.js';
+import { sendApiError } from '../http/api-error.js';
+import { authenticateRequest } from '../http/route-auth.js';
+import { MediaService, type MediaType } from './media.service.js';
 
 type MediaBody = Record<string, unknown>;
 
@@ -18,37 +18,12 @@ export class MediaController {
     this.viewTokenLimiter.setRedis(redis);
   }
 
-  private async getAuthUserId(req: FastifyRequest): Promise<string> {
-    try {
-      const claims = await getAuthenticatedClaims(req);
-      return claims.sub;
-    } catch (err) {
-      throw new MediaError(401, err instanceof Error ? err.message : 'Yêu cầu xác thực tài khoản.');
-    }
-  }
-
-  private sendError(reply: FastifyReply, error: unknown) {
-    if (error instanceof MediaProcessingPendingError) {
-      return reply
-        .status(202)
-        .header('Retry-After', String(Math.max(1, Math.ceil(error.retryAfterMs / 1000))))
-        .send({
-          status: 'PROCESSING',
-          retryAfterMs: error.retryAfterMs,
-          message: error.message,
-        });
-    }
-    const status = error instanceof MediaError ? error.statusCode : 500;
-    const message = error instanceof Error ? error.message : 'Media request failed.';
-    return reply.status(status).send({ error: message });
-  }
-
   registerRoutes(app: FastifyInstance) {
     app.post('/api/v1/media/presign-upload', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'claims_only');
         if (!(await this.presignLimiter.check(userId))) {
-          return reply.status(429).send({ error: 'Bạn đang tải media lên quá nhanh. Vui lòng thử lại sau ít phút.' });
+          return reply.status(429).send({ error: 'Bạn đang tải media lên quá nhanh. Vui lòng thử lại sau ít phút.', code: 'RATE_LIMITED' });
         }
         const body = (req.body || {}) as MediaBody;
         const sessionId = String(body.sessionId ?? body.session_id ?? '');
@@ -83,7 +58,7 @@ export class MediaController {
           expiresAt: result.expiresAt.toISOString(),
         });
       } catch (error) {
-        return this.sendError(reply, error);
+        return sendApiError(reply, error, { fallbackStatus: 500 });
       }
     });
 
@@ -91,11 +66,11 @@ export class MediaController {
       '/api/v1/media/:mediaId/complete',
       async (req: FastifyRequest<{ Params: { mediaId: string } }>, reply: FastifyReply) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'claims_only');
           const result = await this.mediaService.completeUpload(userId, req.params.mediaId);
           return reply.status(200).send(result);
         } catch (error) {
-          return this.sendError(reply, error);
+          return sendApiError(reply, error, { fallbackStatus: 500 });
         }
       }
     );
@@ -104,18 +79,18 @@ export class MediaController {
       '/api/v1/media/consent/:sessionId',
       async (req: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'claims_only');
           const state = await this.mediaService.getConsentState(userId, req.params.sessionId);
           return reply.status(200).send(state);
         } catch (error) {
-          return this.sendError(reply, error);
+          return sendApiError(reply, error, { fallbackStatus: 500 });
         }
       }
     );
 
     app.post('/api/v1/media/consent', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'claims_only');
         const body = (req.body || {}) as MediaBody;
         const sessionId = String(body.sessionId ?? body.session_id ?? '');
         const enabled = body.enabled === true || body.accepted === true;
@@ -128,13 +103,13 @@ export class MediaController {
         );
         return reply.status(200).send({ enabled });
       } catch (error) {
-        return this.sendError(reply, error);
+        return sendApiError(reply, error, { fallbackStatus: 500 });
       }
     });
 
     app.post('/api/v1/media/adult-consent', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'claims_only');
         const body = (req.body || {}) as MediaBody;
         const sessionId = String(body.sessionId ?? body.session_id ?? '');
         const enabled = body.enabled === true || body.accepted === true;
@@ -150,7 +125,7 @@ export class MediaController {
         );
         return reply.status(200).send({ enabled, policyAcknowledged });
       } catch (error) {
-        return this.sendError(reply, error);
+        return sendApiError(reply, error, { fallbackStatus: 500 });
       }
     });
 
@@ -158,9 +133,9 @@ export class MediaController {
       '/api/v1/media/:mediaId/view-token',
       async (req: FastifyRequest<{ Params: { mediaId: string } }>, reply: FastifyReply) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'claims_only');
           if (!(await this.viewTokenLimiter.check(userId))) {
-            return reply.status(429).send({ error: 'Yêu cầu xem media quá nhanh. Vui lòng thử lại sau.' });
+            return reply.status(429).send({ error: 'Yêu cầu xem media quá nhanh. Vui lòng thử lại sau.', code: 'RATE_LIMITED' });
           }
           const result = await this.mediaService.issueViewToken(userId, req.params.mediaId);
           return reply
@@ -182,7 +157,7 @@ export class MediaController {
               auth_tag: result.authTag,
             });
         } catch (error) {
-          return this.sendError(reply, error);
+          return sendApiError(reply, error, { fallbackStatus: 500 });
         }
       }
     );
@@ -191,7 +166,7 @@ export class MediaController {
       '/api/v1/media/stream/:mediaId',
       async (req: FastifyRequest<{ Params: { mediaId: string } }>, reply: FastifyReply) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'claims_only');
           const rawToken = req.headers['x-media-view-token'];
           const result = await this.mediaService.openStream(
             userId,
@@ -210,7 +185,20 @@ export class MediaController {
           if (result.contentLength != null) reply.header('Content-Length', result.contentLength);
           return reply.send(result.body);
         } catch (error) {
-          return this.sendError(reply, error);
+          return sendApiError(reply, error, { fallbackStatus: 500 });
+        }
+      }
+    );
+
+    app.get(
+      '/api/v1/media/:mediaId/status',
+      async (req: FastifyRequest<{ Params: { mediaId: string } }>, reply: FastifyReply) => {
+        try {
+          const userId = await authenticateRequest(req, 'claims_only');
+          const status = await this.mediaService.getMediaStatus(userId, req.params.mediaId);
+          return reply.header('Cache-Control', 'private, no-store').status(200).send(status);
+        } catch (error) {
+          return sendApiError(reply, error, { fallbackStatus: 500 });
         }
       }
     );
@@ -219,11 +207,11 @@ export class MediaController {
       '/api/v1/media/:mediaId/revoke',
       async (req: FastifyRequest<{ Params: { mediaId: string } }>, reply: FastifyReply) => {
         try {
-          const userId = await this.getAuthUserId(req);
+          const userId = await authenticateRequest(req, 'claims_only');
           await this.mediaService.revoke(userId, req.params.mediaId);
           return reply.status(200).send({ revoked: true });
         } catch (error) {
-          return this.sendError(reply, error);
+          return sendApiError(reply, error, { fallbackStatus: 500 });
         }
       }
     );

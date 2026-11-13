@@ -1,4 +1,5 @@
 import fastify from 'fastify';
+import fastifyCookie from '@fastify/cookie';
 import { AuthController } from './auth.controller.js';
 import { describe, it, expect } from 'bun:test';
 import { AgeUtil } from './age.util.js';
@@ -8,7 +9,8 @@ import { AuthService } from './auth.service.js';
 import { MemoryRateLimiter } from './rate-limiter.js';
 import { config } from '../config/env.js';
 import { db } from '../database/index.js';
-import { profiles } from '../database/schema/users.js';
+import { emailVerificationTokens, profiles, users } from '../database/schema/users.js';
+import { CSRF_COOKIE_NAME, registerCsrfOriginProtection, SESSION_COOKIE_NAME } from './session-auth.util.js';
 import { eq } from 'drizzle-orm';
 
 describe('Phase 3: Auth 18+ Security & Policy Tests (T012, T014, T017)', () => {
@@ -375,9 +377,115 @@ describe('Phase 3: Auth 18+ Security & Policy Tests (T012, T014, T017)', () => {
       const data = configRes.json();
       expect(typeof data.googleAuthEnabled).toBe('boolean');
       expect(typeof data.registrationEnabled).toBe('boolean');
+      expect(typeof data.emailVerificationRequired).toBe('boolean');
       expect(typeof data.googleClientId).toBe('string');
     } finally {
       await app.close();
+    }
+  });
+
+  it('creates hashed email verification OTPs, enforces 60s resend cooldown, and marks user emailVerified', async () => {
+    const authService = new AuthService();
+    const app = fastify({ logger: false });
+    await app.register(fastifyCookie);
+    registerCsrfOriginProtection(app);
+    new AuthController(authService).registerRoutes(app);
+
+    const testEmail = `verify-email-${Date.now()}@example.com`;
+    let userId = '';
+
+    try {
+      const regRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/register',
+        payload: {
+          email: testEmail,
+          password: 'VerifyPass123!',
+          nickname: 'VerifyUser',
+          gender: 'FEMALE',
+          birthDate: '1999-03-20',
+          policyAccepted: true,
+        },
+      });
+      expect(regRes.statusCode).toBe(201);
+      const regBody = regRes.json();
+      userId = regBody.profile.id;
+      expect(regBody.profile.emailVerified).toBe(false);
+
+      const cookies = (Array.isArray(regRes.headers['set-cookie'])
+        ? regRes.headers['set-cookie']
+        : [String(regRes.headers['set-cookie'] || '')]
+      ).reduce<Record<string, string>>((acc, raw) => {
+        const pair = raw.split(';', 1)[0] || '';
+        const idx = pair.indexOf('=');
+        if (idx > 0) acc[pair.slice(0, idx).trim()] = decodeURIComponent(pair.slice(idx + 1).trim());
+        return acc;
+      }, {});
+      const cookieHeader = `${SESSION_COOKIE_NAME}=${encodeURIComponent(cookies[SESSION_COOKIE_NAME]!)}; ${CSRF_COOKIE_NAME}=${encodeURIComponent(cookies[CSRF_COOKIE_NAME]!)}`;
+      const csrf = cookies[CSRF_COOKIE_NAME]!;
+
+      const tokenRows = await db
+        .select()
+        .from(emailVerificationTokens)
+        .where(eq(emailVerificationTokens.userId, userId));
+      expect(tokenRows).toHaveLength(1);
+      expect(tokenRows[0]!.codeHash).toHaveLength(64);
+
+      // Immediate resend within 60s is blocked by cooldown
+      const tooFastResend = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/email-verification/resend',
+        headers: { cookie: cookieHeader, 'x-csrf-token': csrf },
+      });
+      expect(tooFastResend.statusCode).toBe(400);
+      expect(tooFastResend.json().error).toContain('60 giây');
+
+      // Backdate token creation to pass cooldown cleanly and resend
+      await db
+        .update(emailVerificationTokens)
+        .set({ createdAt: new Date(Date.now() - 65_000) })
+        .where(eq(emailVerificationTokens.userId, userId));
+
+      const resendRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/email-verification/resend',
+        headers: { cookie: cookieHeader, 'x-csrf-token': csrf },
+      });
+      expect(resendRes.statusCode).toBe(200);
+      const code = resendRes.json().verificationCode as string;
+      expect(code).toMatch(/^\d{6}$/);
+
+      // Wrong code fails cleanly
+      const badConfirm = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/email-verification/confirm',
+        headers: { cookie: cookieHeader, 'x-csrf-token': csrf },
+        payload: { code: '000000' },
+      });
+      expect(badConfirm.statusCode).toBe(400);
+
+      // Correct code succeeds & marks user verified
+      const okConfirm = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/email-verification/confirm',
+        headers: { cookie: cookieHeader, 'x-csrf-token': csrf },
+        payload: { code },
+      });
+      expect(okConfirm.statusCode).toBe(200);
+      expect(okConfirm.json().emailVerified).toBe(true);
+
+      const meRes = await app.inject({
+        method: 'GET',
+        url: '/api/v1/users/me',
+        headers: { cookie: cookieHeader },
+      });
+      expect(meRes.statusCode).toBe(200);
+      expect(meRes.json().emailVerified).toBe(true);
+    } finally {
+      await app.close();
+      if (userId) {
+        await db.delete(users).where(eq(users.id, userId));
+      }
     }
   });
 });

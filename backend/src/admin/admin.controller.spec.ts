@@ -315,6 +315,7 @@ describe('Admin cookie-only & CSRF authorization', () => {
     ].join('; ');
 
     const mockAdminService = {
+      markReportInReview: async (id: string) => ({ status: 'IN_REVIEW', reportId: id }),
       resolveReport: async (id: string) => ({ status: 'RESOLVED', reportId: id }),
     } as unknown as AdminService;
 
@@ -333,6 +334,15 @@ describe('Admin cookie-only & CSRF authorization', () => {
         payload: { conclusion: 'DISMISSED' },
       });
       expect(crossCsrfBlocked.statusCode).toBe(403);
+
+      // Admin IN_REVIEW transition succeeds with admin cookie + admin CSRF token
+      const reviewRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/admin/reports/rep-1/review',
+        headers: { cookie: combinedCookies, 'x-csrf-token': adminCsrf },
+      });
+      expect(reviewRes.statusCode).toBe(200);
+      expect(reviewRes.json()).toEqual({ status: 'IN_REVIEW', reportId: 'rep-1' });
 
       // Admin logout clears ONLY admin session + admin CSRF cookie, leaving user CSRF untouched
       const logoutRes = await app.inject({

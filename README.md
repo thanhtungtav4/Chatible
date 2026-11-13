@@ -10,7 +10,7 @@ Mã nguồn chính thức: [github.com/thanhtungtav4/Chatible](https://github.co
 [![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-0.38-green.svg)](https://orm.drizzle.team/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-dc382d.svg)](https://redis.io/)
-[![Tests](https://img.shields.io/badge/Tests-67%2F67%20Pass-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-70%2F70%20Pass-brightgreen.svg)]()
 
 **Chatible** là giải pháp phần mềm hoàn chỉnh cho nền tảng kết nối ngẫu nhiên 1-1 ẩn danh, trò chuyện đa phương tiện an toàn và kết nối bạn bè riêng tư. Hệ thống được kiến trúc theo chuẩn **Monorepo** với thiết kế **Mobile-First PWA**, sẵn sàng mở rộng và đóng gói lên App Store / Google Play thông qua React Native (Expo).
 
@@ -41,15 +41,16 @@ Mã nguồn chính thức: [github.com/thanhtungtav4/Chatible](https://github.co
 
 ### 5. An Toàn, Báo Cáo Vi Phạm, Super Admin Deck & Vận Hành Go-Live
 - **Bắt buộc 18+**: Chặn đăng ký ngay lập tức nếu ngày sinh tính đến thời điểm hiện tại dưới 18 tuổi.
-- **Đóng băng bằng chứng 90 ngày**: Báo cáo ở cả Chat 1-1 lẫn Nhóm cộng đồng bảo lưu bằng chứng nguyên vẹn trong 90 ngày, kể cả khi phiên chat hết hạn sau 7 ngày.
+- **Đóng băng bằng chứng 90 ngày & Thông báo an toàn**: Báo cáo ở cả Chat 1-1 lẫn Nhóm cộng đồng hỗ trợ chuyển trạng thái `OPEN ➔ IN_REVIEW ➔ RESOLVED`, bảo lưu bằng chứng 90 ngày, gửi thông báo kết quả xử lý/hạn chế/khiếu nại vào hộp thư người dùng (`GET /api/v1/notifications`, mở cho cả tài khoản đang bị hạn chế) đồng thời **ẩn tuyệt đối danh tính người tố cáo**.
 - **Super Admin Control Deck (`/admin`) Bảo Vệ CSRF & Bắt Buộc TOTP 2FA**:
   - Xác thực Super Admin qua cookie `HttpOnly SameSite=Strict` + header `X-CSRF-Token`, bắt buộc TOTP 2FA và vô hiệu hóa hoàn toàn nút/API tắt 2FA (`403`).
-  - Quản lý cấu hình Google Auth, Mail SMTP (mật khẩu bọc KMS AES-256-GCM), chu kỳ lưu trữ, adjudicate bằng chứng & gỡ tin nhóm, duyệt đơn khiếu nại và xem chuỗi `audit_logs` nối SHA-256.
+  - Quản lý cấu hình Google Auth, bắt buộc xác minh email trước khi ghép đôi (`auth.email_verification.required`), Mail SMTP (mật khẩu bọc KMS AES-256-GCM), chu kỳ lưu trữ, tiếp nhận `IN_REVIEW` & adjudicate bằng chứng, gỡ tin nhóm, duyệt đơn khiếu nại và xem chuỗi `audit_logs` nối SHA-256.
 - **Khuyến Nghị Hạ Tầng Go-Live**: Role DB cho ứng dụng/ORM không phải PostgreSQL superuser/owner của `audit_logs` (chỉ `SELECT, INSERT` để bảo toàn trigger append-only), cấu hình S3 Object Lock (WORM) sao lưu audit log ngoài DB và chạy tiến trình `worker:media` độc lập.
 
 > **Lưu ý vận hành media:** Ở production, chạy worker watermark video như một service/container độc lập có restart policy, readiness/heartbeat và FFmpeg. Không chỉ dựa vào process API; khi worker không healthy, API phải báo không sẵn sàng thay vì để video chờ vô hạn.
 
-### 6. Khôi Phục Tài Khoản & Chế Độ Ngụy Trang (Stealth Vault)
+### 6. Xác Minh Email, Khôi Phục Tài Khoản & Chế Độ Ngụy Trang (Stealth Vault)
+- **Xác minh email OTP 6 số**: Cấp mã OTP băm SHA-256 qua email sau khi đăng ký (cooldown 60s), Google OAuth tự động đánh dấu đã xác minh, tuỳ chọn bật/tắt cổng bắt buộc xác minh trước khi ghép đôi từ `/admin`.
 - **Quên và đặt lại mật khẩu**: Sinh mã OTP ngẫu nhiên 6 chữ số (hết hạn 15 phút, chống brute-force và email enumeration).
 - **Đổi mật khẩu & Tự xóa tài khoản**: Hỗ trợ đổi mật khẩu xác thực mật khẩu cũ và tự xóa tài khoản vĩnh viễn (`DELETE /api/v1/users/me`).
 - **Chế độ ngụy trang (Stealth Vault)**: Bảo vệ lịch sử phiên trò chuyện gần đây bằng mã PIN 4 chữ số, ngụy trang dưới dạng ứng dụng ghi chú cá nhân vô hại.
@@ -143,10 +144,10 @@ npm run db:migrate
 
 ## 🧪 Kiểm Thử & Kiểm Định Chất Lượng (Testing & QA)
 
-Dự án tích hợp 16 file kiểm thử tự động với 67 ca test (517 assertions), bao gồm kiểm thử trình duyệt Chrome thật (CDP) và FFmpeg video worker:
+Dự án tích hợp 16 file kiểm thử tự động với 70 ca test (554 assertions), bao gồm kiểm thử trình duyệt Chrome thật (CDP) và FFmpeg video worker:
 
 ```bash
-# Chạy toàn bộ 67 ca kiểm thử tự động
+# Chạy toàn bộ 70 ca kiểm thử tự động
 npm test
 
 # Kiểm tra tĩnh kiểu dữ liệu (TypeScript Typecheck) trên toàn bộ Monorepo
@@ -159,17 +160,17 @@ npm run lint
 npm run build
 ```
 
-### Bảng tóm tắt kết quả kiểm thử (67/67 PASS):
+### Bảng tóm tắt kết quả kiểm thử (70/70 PASS):
 - ✅ **Matching Queue (`matching.spec.ts`, 7/7)**: Ghép đôi 2 chiều, chống lặp đối tác, mở rộng bộ lọc sau 6s, đồng bộ Redis đa node.
 - ✅ **Cloud KMS & Prod Config (`cloud-kms.spec.ts`, 2/2)**: AWS KMS wrap/unwrap + key-access audit hooks; production fail-fast thiếu Cloud KMS, S3 HTTPS hoặc `ADMIN_TOTP_SECRET`.
 - ✅ **Envelope Encryption (`envelope.spec.ts`, 3/3)**: Mã hóa DEK AES-256-GCM và kiểm toàn vẹn AuthTag.
-- ✅ **Auth, Cookie-Only, CSRF & Stealth 423 (`auth.spec.ts` + `session-security.spec.ts`, 17/17)**: Chính sách 18+, Google OAuth, Quên/Đổi MK, Xóa tài khoản, Cookie-only `HttpOnly` (từ chối Bearer trên web/trả JSON không token), CSRF/Origin tách biệt user/admin, Stealth Vault 423 + `unlocked` khi reload, logout JTI revocation và Redis rate limiter.
-- ✅ **SMTP Mail Delivery (`mail.spec.ts`, 2/2)**: Mã hóa KMS mật khẩu SMTP tại DB, che giấu mật khẩu trên API, gửi mail thử nghiệm và OTP Quên mật khẩu.
-- ✅ **Admin Control Deck, CSRF & Chrome E2E (`admin.controller.spec.ts` + `admin-hardening.spec.ts`, 6/6)**: Admin TOTP MFA bắt buộc, chặn tắt MFA `403`, cookie 15p `HttpOnly Strict` + `chatible_admin_csrf` độc lập, giải mã media có audit, gỡ tin nhóm, trigger SQL append-only chuỗi SHA-256 `audit_logs`, và test E2E trên Chrome thật (`login ➔ mở bằng chứng ➔ xử lý report`).
+- ✅ **Auth, Email Verify, Cookie-Only, CSRF & Stealth 423 (`auth.spec.ts` + `session-security.spec.ts`, 18/18)**: Chính sách 18+, xác minh email OTP 6 số + cooldown 60s, Google OAuth, Quên/Đổi MK, Xóa tài khoản, Cookie-only `HttpOnly` (từ chối Bearer trên web/trả JSON không token), CSRF/Origin tách biệt user/admin, Stealth Vault 423 + `unlocked` khi reload, logout JTI revocation và Redis rate limiter.
+- ✅ **SMTP Mail Delivery (`mail.spec.ts`, 2/2)**: Mã hóa KMS mật khẩu SMTP tại DB, che giấu mật khẩu trên API, gửi mail thử nghiệm và OTP xác minh email / quên mật khẩu.
+- ✅ **Admin Control Deck, CSRF & Chrome E2E (`admin.controller.spec.ts` + `admin-hardening.spec.ts`, 6/6)**: Admin TOTP MFA bắt buộc, chặn tắt MFA `403`, cookie 15p `HttpOnly Strict` + `chatible_admin_csrf` độc lập, `IN_REVIEW` report route, giải mã media có audit, gỡ tin nhóm, trigger SQL append-only chuỗi SHA-256 `audit_logs`, và test E2E trên Chrome thật (`login ➔ mở bằng chứng ➔ xử lý report`).
 - ✅ **Media Bounds, Sharp Semaphore, Cache & Video Worker (`media.spec.ts` + `media-worker.spec.ts`, 12/12)**: Streaming GCM + magic-byte check, chặn ảnh >`4096×4096`/`16.7MP`, SharpProcessingSemaphore `503`, cache biến thể ảnh/video `media_watermarked_variants`, heartbeat worker & FFmpeg readiness check (`503` khi worker chết), và FFmpeg worker tách process (`202` polling, Redis Lua semaphore `maxConcurrency=1`).
-- ✅ **Safety & Appeals (`safety.spec.ts`, 4/4)**: Báo cáo vi phạm, đóng băng bằng chứng 90 ngày, chặn/bỏ chặn 2 chiều, khiếu nại.
+- ✅ **Safety, IN_REVIEW & Notifications (`safety.spec.ts`, 5/5)**: Báo cáo vi phạm, chuyển trạng thái `OPEN ➔ IN_REVIEW ➔ RESOLVED`, thông báo an toàn (+ ẩn danh người tố cáo), đóng băng bằng chứng 90 ngày, chặn/bỏ chặn 2 chiều, khiếu nại.
 - ✅ **Groups & Safety Moderation (`groups.spec.ts`, 1/1)**: `BROADCAST` chỉ Admin đăng bài, `PUBLIC`, `PRIVATE_PASSCODE`, báo cáo/chặn tác giả trong Nhóm và Admin gỡ tin vi phạm.
-- ✅ **Session Lifecycle & Gateway (`recent-sessions.controller.spec.ts` + `chat.gateway.spec.ts`, 4/4)**: Handshake Socket.IO cookie-only (từ chối `auth.token`), reconnect 30s, `clientMessageId` chống trùng lặp, chặn tin media giả, `emitGroupMessage` fail-closed khi Redis/DB lỗi + retry an toàn, lịch sử 7 ngày.
+- ✅ **Session Lifecycle & Gateway (`recent-sessions.controller.spec.ts` + `chat.gateway.spec.ts`, 5/5)**: Handshake Socket.IO cookie-only (từ chối `auth.token`), chặn ghép đôi khi bật bắt buộc xác minh email, reconnect 30s, `clientMessageId` chống trùng lặp, chặn tin media giả, `emitGroupMessage` fail-closed khi Redis/DB lỗi + retry an toàn, lịch sử 7 ngày.
 - ✅ **Friends 1-1 Text & Media (`friends.spec.ts`, 5/5)**: Kết bạn, cooldown 7 ngày, chat offline 30 ngày, ảnh & 18+ giữa bạn bè.
 - ✅ **Data Retention & Cleanup (`cleanup.spec.ts`, 4/4)**: Dọn phiên ngẫu nhiên 7 ngày, phiên bạn bè 30 ngày, tin nhóm hết hạn, báo cáo 90 ngày và xóa storage an toàn.
 

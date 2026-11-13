@@ -1,7 +1,8 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type Redis from 'ioredis';
 import { DistributedRateLimiter } from '../auth/rate-limiter.js';
-import { getAuthenticatedClaims } from '../auth/session-auth.util.js';
+import { ApiError, sendApiError } from '../http/api-error.js';
+import { authenticateRequest } from '../http/route-auth.js';
 import { GroupsService } from './groups.service.js';
 import type { ReportReason, SafetyService } from '../safety/safety.service.js';
 
@@ -21,21 +22,19 @@ export class GroupsController {
     this.reportLimiter.setRedis(redis);
   }
 
-  private async getAuthUserId(req: FastifyRequest): Promise<string> {
-    const claims = await getAuthenticatedClaims(req);
-    return claims.sub;
-  }
-
   registerRoutes(app: FastifyInstance) {
     // GET /api/v1/groups
     app.get('/api/v1/groups', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const userId = await this.getAuthUserId(req);
+        const userId = await authenticateRequest(req, 'active_only');
         const rooms = await this.groupsService.listRooms(userId);
         return reply.status(200).send({ rooms });
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Yêu cầu xác thực tài khoản.';
-        return reply.status(401).send({ error: msg });
+        return sendApiError(reply, err, {
+          fallbackStatus: 500,
+          fallbackCode: 'INTERNAL_ERROR',
+          fallbackMessage: 'Không thể tải danh sách nhóm.',
+        });
       }
     });
 
@@ -43,25 +42,15 @@ export class GroupsController {
     app.post(
       '/api/v1/groups/:roomId/join',
       async (req: FastifyRequest<{ Params: { roomId: string }; Body: { passcode?: string } }>, reply: FastifyReply) => {
-        let userId: string;
         try {
-          userId = await this.getAuthUserId(req);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Yêu cầu xác thực tài khoản.';
-          return reply.status(401).send({ error: msg });
-        }
-
-        if (!(await this.joinLimiter.check(`join:${userId}:${req.params.roomId}`))) {
-          return reply.status(429).send({ error: 'Thử quá nhiều lần. Vui lòng chờ một phút.' });
-        }
-
-        try {
+          const userId = await authenticateRequest(req, 'active_only');
+          if (!(await this.joinLimiter.check(`join:${userId}:${req.params.roomId}`))) {
+            throw ApiError.rateLimited('Thử quá nhiều lần. Vui lòng chờ một phút.');
+          }
           const result = await this.groupsService.joinRoom(userId, req.params.roomId, req.body?.passcode);
           return reply.status(200).send(result);
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Không thể tham gia phòng.';
-          const status = msg.includes('mật khẩu') ? 403 : 400;
-          return reply.status(status).send({ error: msg });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Không thể tham gia phòng.' });
         }
       }
     );
@@ -70,20 +59,12 @@ export class GroupsController {
     app.get(
       '/api/v1/groups/:roomId/messages',
       async (req: FastifyRequest<{ Params: { roomId: string } }>, reply: FastifyReply) => {
-        let userId: string;
         try {
-          userId = await this.getAuthUserId(req);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Yêu cầu xác thực tài khoản.';
-          return reply.status(401).send({ error: msg });
-        }
-
-        try {
+          const userId = await authenticateRequest(req, 'active_only');
           const messages = await this.groupsService.listMessages(userId, req.params.roomId);
           return reply.status(200).send({ messages });
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Không thể tải tin nhắn nhóm.';
-          return reply.status(403).send({ error: msg });
+          return sendApiError(reply, err, { fallbackStatus: 403, fallbackCode: 'FORBIDDEN', fallbackMessage: 'Không thể tải tin nhắn nhóm.' });
         }
       }
     );
@@ -95,25 +76,15 @@ export class GroupsController {
         req: FastifyRequest<{ Params: { roomId: string }; Body: { content: string; type?: string } }>,
         reply: FastifyReply
       ) => {
-        let userId: string;
         try {
-          userId = await this.getAuthUserId(req);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Yêu cầu xác thực tài khoản.';
-          return reply.status(401).send({ error: msg });
-        }
-
-        if (!(await this.messageLimiter.check(`msg:${userId}`))) {
-          return reply.status(429).send({ error: 'Bạn đang gửi tin nhắn nhóm quá nhanh.' });
-        }
-
-        try {
+          const userId = await authenticateRequest(req, 'active_only');
+          if (!(await this.messageLimiter.check(`msg:${userId}`))) {
+            throw ApiError.rateLimited('Bạn đang gửi tin nhắn nhóm quá nhanh.');
+          }
           const saved = await this.groupsService.postMessage(userId, req.params.roomId, req.body);
           return reply.status(201).send(saved);
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Không thể gửi tin nhắn.';
-          const status = msg.includes('Quản trị viên') || msg.includes('mở khóa') ? 403 : 400;
-          return reply.status(status).send({ error: msg });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Không thể gửi tin nhắn.' });
         }
       }
     );
@@ -128,21 +99,14 @@ export class GroupsController {
         }>,
         reply: FastifyReply
       ) => {
-        let userId: string;
         try {
-          userId = await this.getAuthUserId(req);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Yêu cầu xác thực tài khoản.';
-          return reply.status(401).send({ error: msg });
-        }
-        if (!this.safetyService) {
-          return reply.status(503).send({ error: 'Dịch vụ an toàn chưa sẵn sàng.' });
-        }
-        if (!(await this.reportLimiter.check(`grp_rpt:${userId}`))) {
-          return reply.status(429).send({ error: 'Bạn đang gửi báo cáo quá nhanh. Vui lòng thử lại sau 1 phút.' });
-        }
-
-        try {
+          const userId = await authenticateRequest(req, 'active_only');
+          if (!this.safetyService) {
+            throw ApiError.serviceUnavailable('Dịch vụ an toàn chưa sẵn sàng.');
+          }
+          if (!(await this.reportLimiter.check(`grp_rpt:${userId}`))) {
+            throw ApiError.rateLimited('Bạn đang gửi báo cáo quá nhanh. Vui lòng thử lại sau 1 phút.');
+          }
           const result = await this.safetyService.createGroupMessageReport({
             reporterId: userId,
             roomId: req.params.roomId,
@@ -152,9 +116,8 @@ export class GroupsController {
           });
           return reply.status(201).send(result);
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Không thể gửi báo cáo.';
-          const status = msg.includes('thành viên') ? 403 : 400;
-          return reply.status(status).send({ error: msg });
+          const status = err instanceof Error && err.message.includes('thành viên') ? 403 : 400;
+          return sendApiError(reply, err, { fallbackStatus: status, fallbackMessage: 'Không thể gửi báo cáo.' });
         }
       }
     );
@@ -166,34 +129,26 @@ export class GroupsController {
         req: FastifyRequest<{ Params: { roomId: string; messageId: string } }>,
         reply: FastifyReply
       ) => {
-        let userId: string;
         try {
-          userId = await this.getAuthUserId(req);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Yêu cầu xác thực tài khoản.';
-          return reply.status(401).send({ error: msg });
-        }
-        if (!this.safetyService) {
-          return reply.status(503).send({ error: 'Dịch vụ an toàn chưa sẵn sàng.' });
-        }
-
-        try {
+          const userId = await authenticateRequest(req, 'active_only');
+          if (!this.safetyService) {
+            throw ApiError.serviceUnavailable('Dịch vụ an toàn chưa sẵn sàng.');
+          }
           const author = await this.groupsService.getMessageAuthorForMember(
             userId,
             req.params.roomId,
             req.params.messageId
           );
           if (author.isAdmin) {
-            return reply.status(400).send({ error: 'Không thể chặn tài khoản Quản trị viên hệ thống.' });
+            throw ApiError.badRequest('Không thể chặn tài khoản Quản trị viên hệ thống.');
           }
           if (author.senderId === userId) {
-            return reply.status(400).send({ error: 'Không thể tự chặn chính mình.' });
+            throw ApiError.badRequest('Không thể tự chặn chính mình.');
           }
           const result = await this.safetyService.blockUser(userId, author.senderId);
           return reply.status(200).send(result);
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Không thể chặn người dùng này.';
-          return reply.status(400).send({ error: msg });
+          return sendApiError(reply, err, { fallbackStatus: 400, fallbackMessage: 'Không thể chặn người dùng này.' });
         }
       }
     );

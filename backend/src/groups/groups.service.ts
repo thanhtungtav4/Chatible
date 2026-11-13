@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { and, asc, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../database/index.js';
 import { communityMembers, communityMessages, communityRooms } from '../database/schema/groups.js';
 import { blockedUsers } from '../database/schema/friends.js';
@@ -7,6 +7,7 @@ import { profiles, users } from '../database/schema/users.js';
 import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
 import { PasswordUtil } from '../auth/password.util.js';
 import { config } from '../config/env.js';
+import { ApiError } from '../http/api-error.js';
 
 export type CommunityRoomType = 'BROADCAST' | 'PUBLIC' | 'PRIVATE_PASSCODE';
 
@@ -215,7 +216,7 @@ export class GroupsService {
       } else {
         const cleanPasscode = passcode?.trim() || '';
         if (!room.passcodeHash || !cleanPasscode || !PasswordUtil.verify(cleanPasscode, room.passcodeHash)) {
-          throw new Error('Mã mật khẩu vào nhóm bảo mật không chính xác.');
+          throw ApiError.forbidden('Mã mật khẩu vào nhóm bảo mật không chính xác.');
         }
         verifiedAt = new Date();
       }
@@ -274,7 +275,7 @@ export class GroupsService {
   async listMessages(userId: string, roomId: string, limit = 60): Promise<CommunityMessageDto[]> {
     await this.assertActiveAdultUser(userId);
     if (!(await this.hasRoomAccess(userId, roomId))) {
-      throw new Error('Bạn cần tham gia hoặc nhập đúng mật khẩu để xem nội dung phòng này.');
+      throw ApiError.forbidden('Bạn cần tham gia hoặc nhập đúng mật khẩu để xem nội dung phòng này.');
     }
 
     const now = new Date();
@@ -304,12 +305,21 @@ export class GroupsService {
       (m) => m.senderId === this.superAdminId || !blockedPeers.has(m.senderId)
     );
 
+    const senderIds = Array.from(
+      new Set(visibleRows.filter((m) => m.senderId !== this.superAdminId).map((m) => m.senderId))
+    );
+    const senderProfiles = senderIds.length > 0
+      ? await db
+          .select({ userId: profiles.userId, nickname: profiles.nickname })
+          .from(profiles)
+          .where(inArray(profiles.userId, senderIds))
+      : [];
+    const nicknameMap = new Map(senderProfiles.map((p) => [p.userId, p.nickname]));
+
     return Promise.all(
       visibleRows.map(async (m) => {
         const isAdminSender = m.senderId === this.superAdminId;
-        const prof = isAdminSender
-          ? null
-          : await db.query.profiles.findFirst({ where: eq(profiles.userId, m.senderId) });
+        const nickname = isAdminSender ? null : nicknameMap.get(m.senderId);
         const content = await this.cryptoService
           .decrypt({
             encryptedDek: m.encryptedDek,
@@ -322,7 +332,7 @@ export class GroupsService {
         return {
           id: m.id,
           roomId: m.roomId,
-          senderNickname: isAdminSender ? 'Quản trị viên Chatible' : (prof?.nickname || 'Thành viên'),
+          senderNickname: isAdminSender ? 'Quản trị viên Chatible' : (nickname || 'Thành viên'),
           senderColor: isAdminSender ? '#dc2626' : avatarColorForUser(m.senderId),
           isAdmin: isAdminSender,
           isSelf: m.senderId === userId,
@@ -378,11 +388,11 @@ export class GroupsService {
     if (!room) throw new Error('Nhóm hoặc kênh không tồn tại.');
 
     if (room.type === 'BROADCAST' && userId !== this.superAdminId) {
-      throw new Error('Kênh thông báo chỉ cho phép Quản trị viên đăng tin.');
+      throw ApiError.forbidden('Kênh thông báo chỉ cho phép Quản trị viên đăng tin.');
     }
 
     if (!(await this.hasRoomAccess(userId, roomId))) {
-      throw new Error('Bạn chưa mở khóa hoặc tham gia nhóm này.');
+      throw ApiError.forbidden('Bạn chưa mở khóa hoặc tham gia nhóm này.');
     }
 
     const content = (input.content || '').trim();

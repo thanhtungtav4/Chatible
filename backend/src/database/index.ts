@@ -23,5 +23,14 @@ export const schema = {
   ...groupsSchema,
 };
 
-const queryClient = postgres(config.databaseUrl);
+const defaultPoolMax = config.nodeEnv === 'production' ? 4 : 10;
+const parsedPoolMax = Number.parseInt(process.env.DB_POOL_MAX || '', 10);
+const poolMax = Number.isFinite(parsedPoolMax) && parsedPoolMax >= 1 ? parsedPoolMax : defaultPoolMax;
+
+const queryClient = postgres(config.databaseUrl, {
+  max: poolMax,
+  idle_timeout: 20,
+  max_lifetime: 1800,
+  connect_timeout: 10,
+});
 export const db = drizzle(queryClient, { schema });

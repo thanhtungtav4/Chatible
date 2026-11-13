@@ -1,7 +1,6 @@
-import { and, desc, eq, gt, or } from 'drizzle-orm';
-import { randomBytes, randomInt } from 'node:crypto';
+import { eq, or } from 'drizzle-orm';
 import { db } from '../database/index.js';
-import { users, profiles, passwordResetTokens } from '../database/schema/users.js';
+import { users, profiles } from '../database/schema/users.js';
 import { friendRequests, friendships } from '../database/schema/friends.js';
 import { systemSettings } from '../database/schema/settings.js';
 import { AgeUtil } from './age.util.js';
@@ -10,6 +9,9 @@ import { JwtUtil } from './jwt.util.js';
 import { config } from '../config/env.js';
 import { MailService } from '../mail/mail.service.js';
 import { tokenRevocationStore } from './session-auth.util.js';
+import { assertActiveAccount } from './account-status.util.js';
+import { AccountRecoveryService } from './account-recovery.service.js';
+import { StealthVaultService } from './stealth-vault.service.js';
 import {
   RegisterDto,
   LoginDto,
@@ -25,7 +27,12 @@ import {
 } from '@chatible/shared';
 
 export class AuthService {
-  constructor(private readonly mailService: MailService = new MailService()) {}
+  private readonly recoveryService: AccountRecoveryService;
+  private readonly stealthVaultService = new StealthVaultService();
+
+  constructor(private readonly mailService: MailService = new MailService()) {
+    this.recoveryService = new AccountRecoveryService(this.mailService);
+  }
 
   async getSystemSetting(key: string, defaultValue = ''): Promise<string> {
     try {
@@ -44,10 +51,12 @@ export class AuthService {
     googleAuthEnabled: boolean;
     googleClientId: string;
     registrationEnabled: boolean;
+    emailVerificationRequired: boolean;
   }> {
     const googleEnabledStr = await this.getSystemSetting('auth.google.enabled', 'true');
     const googleClientIdDb = await this.getSystemSetting('auth.google.client_id', '');
     const regEnabledStr = await this.getSystemSetting('auth.registration.enabled', 'true');
+    const emailVerifReqStr = await this.getSystemSetting('auth.email_verification.required', 'false');
 
     const googleClientId = googleClientIdDb.trim() || config.googleClientId || '';
 
@@ -55,6 +64,7 @@ export class AuthService {
       googleAuthEnabled: googleEnabledStr === 'true' && Boolean(googleClientId),
       googleClientId,
       registrationEnabled: regEnabledStr !== 'false',
+      emailVerificationRequired: emailVerifReqStr === 'true',
     };
   }
 
@@ -134,7 +144,11 @@ export class AuthService {
       preferredAgeMin: newProfile.preferredAgeMin,
       preferredAgeMax: newProfile.preferredAgeMax,
       mediaConsentDefault: newProfile.mediaConsentDefault,
+      emailVerified: false,
     };
+
+    // Non-fatal: never fail or delete registration if SMTP fails (AUTH-05)
+    await this.recoveryService.issueAndSendEmailVerificationCode(newUser.id, normalizedEmail).catch(() => {});
 
     return {
       accessToken: token,
@@ -190,6 +204,7 @@ export class AuthService {
       preferredAgeMin: profile.preferredAgeMin,
       preferredAgeMax: profile.preferredAgeMax,
       mediaConsentDefault: profile.mediaConsentDefault,
+      emailVerified: Boolean(user.emailVerifiedAt),
     };
 
     return {
@@ -292,6 +307,7 @@ export class AuthService {
           email,
           googleSub,
           status: 'ACTIVE',
+          emailVerifiedAt: new Date(),
         })
         .returning();
 
@@ -308,6 +324,8 @@ export class AuthService {
         preferredAgeMax: 30,
         mediaConsentDefault: false,
       });
+    } else if (!user.emailVerifiedAt) {
+      await db.update(users).set({ emailVerifiedAt: new Date(), updatedAt: new Date() }).where(eq(users.id, user.id));
     }
 
     const profile = await db.query.profiles.findFirst({
@@ -333,6 +351,7 @@ export class AuthService {
         preferredAgeMin: profile.preferredAgeMin,
         preferredAgeMax: profile.preferredAgeMax,
         mediaConsentDefault: profile.mediaConsentDefault,
+        emailVerified: true,
       },
     };
   }
@@ -359,20 +378,11 @@ export class AuthService {
     };
   }
 
-  private async assertActiveUser(userId: string): Promise<void> {
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
-    if (!user || user.status === 'RESTRICTED' || user.status === 'DELETED') {
-      throw new Error('Tài khoản của bạn đã bị khóa hoặc đình chỉ do vi phạm chính sách cộng đồng.');
-    }
-  }
-
   /**
    * Get authenticated user's private profile and preferences
    */
   async getMyProfile(userId: string): Promise<UserPrivateProfile> {
-    await this.assertActiveUser(userId);
+    const user = await assertActiveAccount(userId);
     const profile = await db.query.profiles.findFirst({
       where: eq(profiles.userId, userId),
     });
@@ -392,6 +402,7 @@ export class AuthService {
       preferredAgeMin: profile.preferredAgeMin,
       preferredAgeMax: profile.preferredAgeMax,
       mediaConsentDefault: profile.mediaConsentDefault,
+      emailVerified: Boolean(user.emailVerifiedAt),
     };
   }
 
@@ -399,7 +410,7 @@ export class AuthService {
    * Update user profile & matching preferences (S08 / Profile settings)
    */
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<UserPrivateProfile> {
-    await this.assertActiveUser(userId);
+    const user = await assertActiveAccount(userId);
     const profile = await db.query.profiles.findFirst({
       where: eq(profiles.userId, userId),
     });
@@ -461,193 +472,36 @@ export class AuthService {
       preferredAgeMin: updated.preferredAgeMin,
       preferredAgeMax: updated.preferredAgeMax,
       mediaConsentDefault: updated.mediaConsentDefault,
+      emailVerified: Boolean(user.emailVerifiedAt),
     };
   }
 
-  /**
-   * The vault PIN is a UI privacy lock, not a replacement for account authentication.
-   * Only whether a hash exists is returned to clients; the PIN itself never leaves the server.
-   */
-  async getStealthVaultConfig(userId: string): Promise<StealthVaultConfig> {
-    await this.assertActiveUser(userId);
-    const profile = await db.query.profiles.findFirst({
-      where: eq(profiles.userId, userId),
-    });
-    if (!profile) throw new Error('Hồ sơ người dùng không tồn tại.');
+  async resendEmailVerification(userId: string) {
+    return this.recoveryService.resendEmailVerification(userId);
+  }
 
-    return {
-      enabled: profile.stealthEnabled,
-      hasPin: Boolean(profile.stealthPinHash),
-    };
+  async verifyEmailCode(userId: string, rawCode: string) {
+    return this.recoveryService.verifyEmailCode(userId, rawCode);
+  }
+
+  async getStealthVaultConfig(userId: string): Promise<StealthVaultConfig> {
+    return this.stealthVaultService.getConfig(userId);
   }
 
   async updateStealthVault(userId: string, dto: UpdateStealthVaultDto): Promise<StealthVaultConfig> {
-    await this.assertActiveUser(userId);
-    if (typeof dto?.enabled !== 'boolean') {
-      throw new Error('Trạng thái Kho riêng tư không hợp lệ.');
-    }
-
-    const profile = await db.query.profiles.findFirst({
-      where: eq(profiles.userId, userId),
-    });
-    if (!profile) throw new Error('Hồ sơ người dùng không tồn tại.');
-
-    if (!dto.enabled) {
-      await db
-        .update(profiles)
-        .set({ stealthEnabled: false, stealthPinHash: null, updatedAt: new Date() })
-        .where(eq(profiles.userId, userId));
-      return { enabled: false, hasPin: false };
-    }
-
-    const pin = dto.pin?.trim();
-    if (!pin || !/^\d{4}$/.test(pin)) {
-      throw new Error('Mã PIN phải gồm đúng 4 chữ số.');
-    }
-
-    if (profile.stealthPinHash) {
-      const currentPin = dto.currentPin?.trim();
-      if (!currentPin || !PasswordUtil.verify(currentPin, profile.stealthPinHash)) {
-        throw new Error('Mã PIN hiện tại không chính xác.');
-      }
-    }
-
-    await db
-      .update(profiles)
-      .set({
-        stealthEnabled: true,
-        stealthPinHash: PasswordUtil.hash(pin),
-        updatedAt: new Date(),
-      })
-      .where(eq(profiles.userId, userId));
-
-    return { enabled: true, hasPin: true };
+    return this.stealthVaultService.update(userId, dto);
   }
 
   async unlockStealthVault(userId: string, pin: string | undefined): Promise<{ message: string }> {
-    await this.assertActiveUser(userId);
-    const profile = await db.query.profiles.findFirst({
-      where: eq(profiles.userId, userId),
-    });
-    if (!profile || !profile.stealthEnabled || !profile.stealthPinHash) {
-      throw new Error('Kho riêng tư chưa được thiết lập.');
-    }
-
-    if (!pin || !/^\d{4}$/.test(pin) || !PasswordUtil.verify(pin, profile.stealthPinHash)) {
-      throw new Error('Mã PIN không chính xác.');
-    }
-
-    return { message: 'Đã mở khóa Kho riêng tư.' };
+    return this.stealthVaultService.unlock(userId, pin);
   }
 
-  /**
-   * Request password reset code
-   */
   async forgotPassword(email: string): Promise<{ message: string; resetCode?: string }> {
-    const normalizedEmail = email?.toLowerCase().trim();
-    if (!normalizedEmail) {
-      throw new Error('Vui lòng cung cấp email hợp lệ.');
-    }
-
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, normalizedEmail),
-    });
-
-    if (!user || user.status === 'DELETED') {
-      // Neutral response to prevent email enumeration
-      return {
-        message: 'Nếu email tồn tại trong hệ thống, mã xác nhận đặt lại mật khẩu đã được tạo và gửi.',
-      };
-    }
-
-    if (user.status === 'RESTRICTED') {
-      throw new Error('Tài khoản này đã bị hạn chế do vi phạm chính sách cộng đồng.');
-    }
-
-    const code = String(randomInt(100000, 999999));
-    const tokenHash = randomBytes(24).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
-
-    await db.insert(passwordResetTokens).values({
-      userId: user.id,
-      code,
-      tokenHash,
-      expiresAt,
-    });
-
-    const mailResult = await this.mailService.sendPasswordResetOtp(user.email, code);
-
-    return {
-      message: mailResult.sent
-        ? 'Mã xác nhận 6 số đã được gửi tới email của bạn (hết hạn trong 15 phút).'
-        : 'Mã xác nhận 6 số đã được tạo thành công (hết hạn trong 15 phút).',
-      resetCode: process.env.NODE_ENV !== 'production' ? code : undefined,
-    };
+    return this.recoveryService.forgotPassword(email);
   }
 
-  /**
-   * Reset password with verification code
-   */
   async resetPassword(dto: { email: string; code: string; newPassword: string }): Promise<{ message: string }> {
-    const normalizedEmail = dto.email?.toLowerCase().trim();
-    const code = dto.code?.trim();
-    const newPassword = dto.newPassword;
-
-    if (!normalizedEmail || !code || !newPassword) {
-      throw new Error('Vui lòng cung cấp đầy đủ email, mã xác nhận và mật khẩu mới.');
-    }
-
-    if (newPassword.length < 8) {
-      throw new Error('Mật khẩu mới phải có độ dài tối thiểu 8 ký tự.');
-    }
-
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, normalizedEmail),
-    });
-
-    if (!user || user.status === 'DELETED') {
-      throw new Error('Tài khoản không tồn tại.');
-    }
-
-    if (user.status === 'RESTRICTED') {
-      throw new Error('Tài khoản đã bị hạn chế vi phạm.');
-    }
-
-    const now = new Date();
-    const [tokenRecord] = await db
-      .select()
-      .from(passwordResetTokens)
-      .where(
-        and(
-          eq(passwordResetTokens.userId, user.id),
-          eq(passwordResetTokens.code, code),
-          gt(passwordResetTokens.expiresAt, now)
-        )
-      )
-      .orderBy(desc(passwordResetTokens.createdAt))
-      .limit(1);
-
-    if (!tokenRecord || tokenRecord.usedAt) {
-      throw new Error('Mã xác nhận không chính xác hoặc đã hết hạn. Vui lòng yêu cầu mã mới.');
-    }
-
-    const newHash = PasswordUtil.hash(newPassword);
-
-    await db
-      .update(users)
-      .set({ passwordHash: newHash, updatedAt: now })
-      .where(eq(users.id, user.id));
-
-    await db
-      .update(passwordResetTokens)
-      .set({ usedAt: now })
-      .where(eq(passwordResetTokens.id, tokenRecord.id));
-
-    await tokenRevocationStore.revokeUserTokensBefore(user.id, Date.now());
-
-    return {
-      message: 'Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.',
-    };
+    return this.recoveryService.resetPassword(dto);
   }
 
   /**
@@ -703,49 +557,6 @@ export class AuthService {
     userId: string,
     dto: { currentPassword?: string; newPassword?: string }
   ): Promise<{ message: string }> {
-    const currentPassword = dto?.currentPassword?.trim();
-    const newPassword = dto?.newPassword?.trim();
-
-    if (!currentPassword || !newPassword) {
-      throw new Error('Vui lòng cung cấp mật khẩu hiện tại và mật khẩu mới.');
-    }
-
-    if (newPassword.length < 8) {
-      throw new Error('Mật khẩu mới phải có tối thiểu 8 ký tự.');
-    }
-
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
-
-    if (!user || user.status === 'RESTRICTED' || user.status === 'DELETED') {
-      throw new Error('Tài khoản không tồn tại hoặc đã bị khóa.');
-    }
-
-    if (!user.passwordHash) {
-      throw new Error('Tài khoản đăng nhập qua Google chưa thiết lập mật khẩu.');
-    }
-
-    const isMatch = PasswordUtil.verify(currentPassword, user.passwordHash);
-    if (!isMatch) {
-      throw new Error('Mật khẩu hiện tại không chính xác.');
-    }
-
-    const newPasswordHash = PasswordUtil.hash(newPassword);
-    const now = new Date();
-
-    await db
-      .update(users)
-      .set({
-        passwordHash: newPasswordHash,
-        updatedAt: now,
-      })
-      .where(eq(users.id, userId));
-
-    await tokenRevocationStore.revokeUserTokensBefore(userId, Date.now());
-
-    return {
-      message: 'Đổi mật khẩu thành công.',
-    };
+    return this.recoveryService.changePassword(userId, dto);
   }
 }

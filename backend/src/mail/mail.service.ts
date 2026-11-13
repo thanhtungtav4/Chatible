@@ -265,46 +265,121 @@ export class MailService {
     };
   }
 
-  async sendPasswordResetOtp(
-    email: string,
-    code: string
-  ): Promise<{ sent: boolean; reason?: 'disabled' | 'error' }> {
+  private renderChatibleEmailHtml(options: {
+    heading: string;
+    intro: string;
+    highlightBox?: string;
+    note?: string;
+    footer: string;
+  }): string {
+    return `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 0 auto; padding: 28px; background: #ffffff; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 16px;">
+        <div style="font-size: 22px; font-weight: 800; color: #2563eb; margin-bottom: 8px;">Chatible</div>
+        <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 12px; color: #0f172a;">${escapeHtml(options.heading)}</h2>
+        <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 18px;">${escapeHtml(options.intro)}</p>
+        ${options.highlightBox ?? ''}
+        ${options.note ? `<p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 10px;">${escapeHtml(options.note)}</p>` : ''}
+        <p style="font-size: 12px; color: #94a3b8; line-height: 1.5; margin: 0; border-top: 1px solid #e2e8f0; padding-top: 14px;">${escapeHtml(options.footer)}</p>
+      </div>
+    `;
+  }
+
+  private async sendOtpMail(options: {
+    email: string;
+    code: string;
+    subject: string;
+    heading: string;
+    intro: string;
+  }): Promise<{ sent: boolean; reason?: 'disabled' | 'error' }> {
     const cfg = await this.getSmtpConfig();
     if (!cfg.enabled || !cfg.host) {
       return { sent: false, reason: 'disabled' };
     }
 
     try {
-      const safeCode = escapeHtml(code);
+      const safeCode = escapeHtml(options.code);
+      const highlightBox = `
+        <div style="text-align: center; background: #f1f5f9; border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #1d4ed8;">${safeCode}</span>
+        </div>
+      `;
       await this.sendMail(
         {
-          to: email,
-          subject: '[Chatible] Mã xác nhận đặt lại mật khẩu của bạn',
-          text: `Xin chào,\n\nMã xác nhận đặt lại mật khẩu Chatible của bạn là: ${code}\n\nMã có hiệu lực trong vòng 15 phút. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.\nNếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.`,
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 0 auto; padding: 28px; background: #ffffff; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 16px;">
-              <div style="font-size: 22px; font-weight: 800; color: #2563eb; margin-bottom: 8px;">Chatible</div>
-              <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 12px; color: #0f172a;">Yêu cầu đặt lại mật khẩu</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 20px;">
-                Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản Chatible liên kết với email này. Vui lòng nhập mã xác nhận 6 chữ số bên dưới:
-              </p>
-              <div style="text-align: center; background: #f1f5f9; border-radius: 12px; padding: 18px; margin-bottom: 20px;">
-                <span style="font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #1d4ed8;">${safeCode}</span>
-              </div>
-              <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 10px;">
-                ⏱️ Mã xác nhận này chỉ có hiệu lực trong <strong>15 phút</strong> và chỉ được sử dụng 1 lần.
-              </p>
-              <p style="font-size: 12px; color: #94a3b8; line-height: 1.5; margin: 0; border-top: 1px solid #e2e8f0; padding-top: 14px;">
-                Lưu ý bảo mật: Tuyệt đối không chia sẻ mã này với bất kỳ ai. Nếu bạn không thực hiện yêu cầu này, bạn có thể an toàn bỏ qua email này.
-              </p>
-            </div>
-          `,
+          to: options.email,
+          subject: options.subject,
+          text: `${options.heading}\n\n${options.intro}\nMã xác nhận của bạn là: ${options.code}\nMã có hiệu lực trong vòng 15 phút và chỉ sử dụng 1 lần.`,
+          html: this.renderChatibleEmailHtml({
+            heading: options.heading,
+            intro: options.intro,
+            highlightBox,
+            note: 'Mã xác nhận này chỉ có hiệu lực trong 15 phút và chỉ được sử dụng 1 lần.',
+            footer: 'Lưu ý bảo mật: Tuyệt đối không chia sẻ mã này với bất kỳ ai.',
+          }),
         },
         cfg
       );
       return { sent: true };
     } catch (err) {
-      console.error('[MailService] Failed to send password reset OTP:', err);
+      console.error('[MailService] Failed to send OTP mail:', err);
+      return { sent: false, reason: 'error' };
+    }
+  }
+
+  async sendPasswordResetOtp(
+    email: string,
+    code: string
+  ): Promise<{ sent: boolean; reason?: 'disabled' | 'error' }> {
+    return this.sendOtpMail({
+      email,
+      code,
+      subject: '[Chatible] Mã xác nhận đặt lại mật khẩu của bạn',
+      heading: 'Yêu cầu đặt lại mật khẩu',
+      intro:
+        'Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản Chatible liên kết với email này. Vui lòng nhập mã xác nhận 6 chữ số bên dưới:',
+    });
+  }
+
+  async sendEmailVerificationOtp(
+    email: string,
+    code: string
+  ): Promise<{ sent: boolean; reason?: 'disabled' | 'error' }> {
+    return this.sendOtpMail({
+      email,
+      code,
+      subject: '[Chatible] Xác minh địa chỉ email của bạn',
+      heading: 'Xác minh địa chỉ email',
+      intro:
+        'Vui lòng nhập mã xác minh 6 chữ số bên dưới trong ứng dụng Chatible để hoàn tất xác minh địa chỉ email tài khoản của bạn:',
+    });
+  }
+
+  async sendSafetyNotificationEmail(
+    email: string,
+    subject: string,
+    heading: string,
+    message: string
+  ): Promise<{ sent: boolean; reason?: 'disabled' | 'error' }> {
+    const cfg = await this.getSmtpConfig();
+    if (!cfg.enabled || !cfg.host) {
+      return { sent: false, reason: 'disabled' };
+    }
+    try {
+      await this.sendMail(
+        {
+          to: email,
+          subject,
+          text: `${heading}\n\n${message}\n\nVui lòng đăng nhập vào Chatible để xem thông báo chi tiết hoặc gửi khiếu nại nếu cần.`,
+          html: this.renderChatibleEmailHtml({
+            heading,
+            intro: message,
+            footer: 'Đây là thông báo an toàn tự động từ Chatible. Không phản hồi trực tiếp email này.',
+          }),
+        },
+        cfg
+      );
+      return { sent: true };
+    } catch (err) {
+      console.error('[MailService] Failed to send safety notice email:', err);
       return { sent: false, reason: 'error' };
     }
   }

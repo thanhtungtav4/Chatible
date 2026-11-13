@@ -10,6 +10,7 @@ import { db } from '../database/index.js';
 import { chatSessions } from '../database/schema/sessions.js';
 import { messages } from '../database/schema/messages.js';
 import { mediaAssets } from '../database/schema/media.js';
+import { systemSettings } from '../database/schema/settings.js';
 import { and, eq } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import {
@@ -286,6 +287,12 @@ export class ChatGateway {
           socket.emit(SocketEvents.MATCHING_ERROR, { error: 'Bạn thao tác tìm bạn quá nhanh. Vui lòng thử lại sau ít giây.' });
           return;
         }
+        if (await this.isEmailVerificationBlocked(authUser.userId)) {
+          socket.emit(SocketEvents.MATCHING_ERROR, {
+            error: 'Tài khoản cần xác minh email trong phần Hồ sơ trước khi bắt đầu tìm bạn.',
+          });
+          return;
+        }
         if (await this.hasLiveSession(authUser.userId)) {
           socket.emit(SocketEvents.MATCHING_ERROR, { error: 'Kết thúc phiên chat hiện tại trước khi ghép đôi lại.' });
           return;
@@ -322,6 +329,12 @@ export class ChatGateway {
         await userRoomReady;
         const userId = this.socketToUser.get(socket.id);
         if (!userId) return;
+        if (await this.isEmailVerificationBlocked(userId)) {
+          socket.emit(SocketEvents.MATCHING_ERROR, {
+            error: 'Tài khoản cần xác minh email trong phần Hồ sơ trước khi bắt đầu tìm bạn.',
+          });
+          return;
+        }
         if (await this.hasLiveSession(userId)) {
           socket.emit(SocketEvents.MATCHING_ERROR, { error: 'Kết thúc phiên chat hiện tại trước khi ghép đôi lại.' });
           return;
@@ -787,6 +800,26 @@ export class ChatGateway {
 
   private async endExpiredReconnect(sessionId: string): Promise<void> {
     await this.sessionCoordinator.endIfReconnectExpired(sessionId);
+  }
+
+  private async isEmailVerificationBlocked(userId: string): Promise<boolean> {
+    try {
+      const [setting] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, 'auth.email_verification.required'))
+        .limit(1);
+      if (setting?.value !== 'true') return false;
+
+      const [user] = await db
+        .select({ emailVerifiedAt: users.emailVerifiedAt })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      return !user?.emailVerifiedAt;
+    } catch {
+      return false;
+    }
   }
 
   private async hasLiveSession(userId: string): Promise<boolean> {

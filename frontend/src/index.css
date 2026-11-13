@@ -12,3 +12,25 @@ body {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ping,
+  .animate-pulse,
+  .animate-bounce,
+  .animate-spin {
+    animation: none;
+  }
+
+  * {
+    scroll-behavior: auto;
+  }
+}

@@ -16,6 +16,7 @@ import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
 import { db } from '../database/index.js';
 import { chatSessions } from '../database/schema/sessions.js';
 import { blockedUsers } from '../database/schema/friends.js';
+import { systemSettings } from '../database/schema/settings.js';
 import { profiles, users } from '../database/schema/users.js';
 import { FriendsService } from '../friends/friends.service.js';
 import { LocalKmsService } from '../kms/local-kms.service.js';
@@ -561,6 +562,98 @@ describe('Chat gateway session lifecycle', () => {
       await cleanupRedis.quit();
       await db.delete(blockedUsers).where(or(inArray(blockedUsers.blockerId, userIds), inArray(blockedUsers.blockedId, userIds)));
       await db.delete(users).where(inArray(users.id, userIds));
+    }
+  });
+
+  it('blocks matching join when auth.email_verification.required=true until user verifies email', async () => {
+    const userId = randomUUID();
+    const email = `verif-match-${userId}@chatible.test`;
+    const httpServer = createServer();
+    const socketServer = new SocketIOServer(httpServer, { transports: ['websocket'] });
+    const redisNamespace = `chatible:test:gateway-verif:${randomUUID()}`;
+    const matchingEngine = new MatchingEngine(config.redisUrl, redisNamespace);
+    const sessionCoordinator = new RedisSessionCoordinator(config.redisUrl, redisNamespace, matchingEngine.instanceId);
+    const safetyService = new SafetyService(cryptoService, config.superAdminId);
+    let client: ClientSocket | undefined;
+    let gateway: ChatGateway | undefined;
+
+    const [prevSetting] = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.key, 'auth.email_verification.required'))
+      .limit(1);
+
+    try {
+      await db
+        .insert(systemSettings)
+        .values({
+          key: 'auth.email_verification.required',
+          value: 'true',
+          category: 'AUTH',
+        })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value: 'true', updatedAt: new Date() },
+        });
+
+      await db.insert(users).values({ id: userId, email, emailVerifiedAt: null });
+      await db.insert(profiles).values({
+        userId,
+        nickname: 'UnverifiedUser',
+        gender: 'MALE',
+        birthDate: '1994-01-01',
+        calculatedAge: 32,
+      });
+
+      await Promise.all([matchingEngine.connect(), sessionCoordinator.connect()]);
+      gateway = new ChatGateway(
+        socketServer,
+        matchingEngine,
+        sessionCoordinator,
+        cryptoService,
+        new FriendsService(cryptoService),
+        safetyService,
+        new MediaService()
+      );
+      await gateway.registerHandlers();
+
+      await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+      const address = httpServer.address();
+      if (!address || typeof address === 'string') throw new Error('No port');
+      const url = `http://127.0.0.1:${address.port}`;
+
+      client = await connectUser(url, JwtUtil.sign({ sub: userId, email }, config.jwtSecret));
+
+      const errPromise = waitForEvent<MatchingErrorEvent>(client, SocketEvents.MATCHING_ERROR);
+      client.emit(SocketEvents.MATCHING_JOIN, { targetGender: 'ALL', ageMin: 18, ageMax: 35 });
+      const errEvent = await errPromise;
+      expect(errEvent.error).toContain('xác minh email');
+      expect(matchingEngine.getQueueSize()).toBe(0);
+
+      // Verify user email -> MATCHING_JOIN succeeds & user enters queue
+      await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, userId));
+      client.emit(SocketEvents.MATCHING_JOIN, { targetGender: 'ALL', ageMin: 18, ageMax: 35 });
+      await waitForQueueSize(matchingEngine, 1);
+    } finally {
+      if (prevSetting) {
+        await db
+          .insert(systemSettings)
+          .values(prevSetting)
+          .onConflictDoUpdate({
+            target: systemSettings.key,
+            set: { value: prevSetting.value, updatedAt: new Date() },
+          });
+      }
+      client?.disconnect();
+      await new Promise<void>((resolve) => socketServer.close(() => resolve()));
+      await gateway?.close();
+      await matchingEngine.close();
+      await sessionCoordinator.close();
+      const cleanupRedis = new Redis(config.redisUrl);
+      const testKeys = await cleanupRedis.keys(`${redisNamespace}:*`);
+      if (testKeys.length > 0) await cleanupRedis.del(...testKeys);
+      await cleanupRedis.quit();
+      await db.delete(users).where(eq(users.id, userId));
     }
   });
 });

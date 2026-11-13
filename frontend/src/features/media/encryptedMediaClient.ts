@@ -210,3 +210,27 @@ export async function revokeMediaAsset(mediaId: string): Promise<void> {
     throw new Error(body.error || 'Không thể thu hồi media.');
   }
 }
+
+export type ServerMediaRevocationState = 'revoked' | 'active' | 'unknown';
+
+/**
+ * Queries the authoritative server status of a media asset to reconcile UI/lifecycle state
+ * if a revoke request fails or times out over the network.
+ */
+export async function fetchMediaRevocationStatus(mediaId: string): Promise<ServerMediaRevocationState> {
+  try {
+    const response = await apiFetch(`/api/v1/media/${encodeURIComponent(mediaId)}/status`, {
+      cache: 'no-store',
+    });
+    if (response.status === 404 || response.status === 410) {
+      return 'revoked';
+    }
+    if (!response.ok) {
+      return 'unknown';
+    }
+    const body = (await response.json().catch(() => ({}))) as { revoked?: boolean; expired?: boolean };
+    return body.revoked || body.expired ? 'revoked' : 'active';
+  } catch {
+    return 'unknown';
+  }
+}

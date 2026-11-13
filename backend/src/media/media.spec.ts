@@ -484,6 +484,14 @@ describe('MediaService authorization and revocation', () => {
       expect(stream.headers['x-media-watermarked']).toBe('embedded');
       expect(stream.headers['x-media-iv']).toBeTruthy();
       expect(stream.headers['x-media-auth-tag']).toBeTruthy();
+      const statusBefore = await app.inject({
+        method: 'GET',
+        url: `/api/v1/media/${mediaId}/status`,
+        headers: { cookie: ownerCookie },
+      });
+      expect(statusBefore.statusCode).toBe(200);
+      expect(statusBefore.json()).toMatchObject({ mediaId, status: 'READY', revoked: false, expired: false });
+
       const revoke = await app.inject({
         method: 'POST',
         url: `/api/v1/media/${mediaId}/revoke`,
@@ -491,6 +499,14 @@ describe('MediaService authorization and revocation', () => {
       });
       expect(revoke.statusCode).toBe(200);
       expect(revoke.json()).toMatchObject({ revoked: true });
+
+      const statusAfter = await app.inject({
+        method: 'GET',
+        url: `/api/v1/media/${mediaId}/status`,
+        headers: { cookie: recipientCookie },
+      });
+      expect(statusAfter.statusCode).toBe(200);
+      expect(statusAfter.json()).toMatchObject({ mediaId, revoked: true });
     } finally {
       await app.close();
     }

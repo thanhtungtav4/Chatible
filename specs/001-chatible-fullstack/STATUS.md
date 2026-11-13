@@ -2,7 +2,7 @@
 
 **Dự án**: Chatible — Nền tảng Chat Ẩn Danh 1-1 An Toàn (Web ➔ Mobile App Ready)  
 **Cập nhật lần cuối**: 2026-11-12  
-**Mức độ sẵn sàng**: 🟢 **CODE COMPLETE & SECURITY HARDENED (67/67 TESTS PASS) — SẴN SÀNG CHO THỬ NGHIỆM KÍN (PRE-BETA PILOT)**  
+**Mức độ sẵn sàng**: 🟢 **CODE COMPLETE & SECURITY HARDENED (70/70 TESTS PASS) — SẴN SÀNG CHO THỬ NGHIỆM KÍN (PRE-BETA PILOT)**  
 
 ---
 
@@ -12,13 +12,13 @@ Thay vì đánh đồng "có code" là "xong", hệ thống Chatible được đ
 
 | Hạng mục chức năng | Cấp độ 1: Đã có Code | Cấp độ 2: Đã qua CI Test | Cấp độ 3: Nghiệm thu Pre-Beta | Ghi chú vận hành / Bảo mật |
 |---|:---:|:---:|:---:|---|
-| **1. Xác thực & Khôi phục tài khoản** | ✅ | ✅ | 🟡 Sẵn sàng thử nghiệm | Cookie-only web auth (`HttpOnly` JWT, không trả `accessToken`/`vaultToken` ra JS, từ chối Bearer trên web routes/Socket.IO), Quên/Đặt lại MK 6 số, Đăng nhập Google + 18+, Tự xóa tài khoản. |
+| **1. Xác thực & Khôi phục tài khoản** | ✅ | ✅ | 🟡 Sẵn sàng thử nghiệm | Cookie-only web auth (`HttpOnly` JWT, không trả `accessToken`/`vaultToken` ra JS, từ chối Bearer trên web routes/Socket.IO), Xác minh email 6 số (tuỳ chọn ép xác minh trước khi ghép đôi qua cài đặt Admin), Quên/Đặt lại MK 6 số, Đăng nhập Google (tự xác minh) + 18+, Tự xóa tài khoản. |
 | **2. Minh bạch Riêng tư & Điều khoản** | ✅ | ✅ | 🟢 Đạt chuẩn | Sửa copy "Tự khai 18+", công khai mô hình mã hóa KMS hệ thống giữ khóa, hạn lưu 7/30/90 ngày, minh định watermark chỉ nhằm răn đe/truy vết và không thể chống chụp/quay màn hình. |
 | **3. Ghép đôi 2 chiều & WebSocket Gateway** | ✅ | ✅ | 🟡 Sẵn sàng thử nghiệm | Matching 2 chiều nguyên tử qua Redis, bỏ số đếm ảo, xử lý reconnect 30s, handshake bắt buộc cookie `HttpOnly`, lọc tin nhóm fail-closed (không fallback broadcast khi lỗi Redis/DB, ghi metric & retry an toàn). |
 | **4. Pipeline Media, Worker Video & 18+** | ✅ | ✅ | 🟢 Đạt chuẩn | Ảnh giới hạn `4096×4096` (~16.77 MP), Sharp chạy qua temp disk + semaphore (`SHARP_CONCURRENCY=1`, backpressure `503`) + cache `media_watermarked_variants` theo người nhận; Video qua `media-worker` tách riêng có heartbeat Redis, `/health` & `/ready` + API trả `503` khi worker/FFmpeg lỗi. |
 | **5. Bạn bè & Lịch sử phiên gần đây** | ✅ | ✅ | 🟢 Đạt chuẩn | Kết bạn từ phiên ngẫu nhiên, chat offline 30 ngày hỗ trợ cả TEXT & media (`IMAGE`/`AUDIO`/`VIDEO`/18+), cooldown hủy/từ chối 7 ngày, cron dọn cả phiên `FRIEND` hết hạn. |
 | **6. Chế độ Ngụy trang (Stealth Vault)** | ✅ | ✅ | 🟢 Đạt chuẩn | PIN 4 số băm trên máy chủ, backend trả `423 Locked` nếu thiếu cookie `chatible_vault_unlock` `HttpOnly Strict`, API cấu hình trả trạng thái `unlocked` chuẩn xác sau reload trang. |
-| **7. An toàn, Báo cáo, Admin & Kiểm toán** | ✅ | ✅ | 🟢 Đạt chuẩn | Phân luồng `URGENT`/`HIGH`/`MEDIUM`, Admin cookie `HttpOnly Strict` + double-submit `X-CSRF-Token`, fail-fast production thiếu `ADMIN_TOTP_SECRET` & chặn tắt MFA (`403`), báo cáo/chặn/gỡ tin Nhóm có AuditLog, test E2E trên Chrome thật. |
+| **7. An toàn, Báo cáo, Admin & Kiểm toán** | ✅ | ✅ | 🟢 Đạt chuẩn | Phân luồng `URGENT`/`HIGH`/`MEDIUM`, chuyển trạng thái `OPEN` ➔ `IN_REVIEW` ➔ `RESOLVED`, hộp thư thông báo an toàn (+ email không chặn) bảo mật danh tính người tố cáo, Admin cookie `HttpOnly Strict` + `X-CSRF-Token`, bắt buộc TOTP MFA, báo cáo/chặn/gỡ tin Nhóm có AuditLog, test E2E Chrome thật. |
 | **8. Vận hành, Cloud KMS & Hạ tầng Go-Live** | ✅ | ✅ | 🟢 Đạt chuẩn | Bắt buộc Cloud KMS (`@aws-sdk/client-kms`) + S3 HTTPS + `ADMIN_TOTP_SECRET` Base32 ở production, Distributed Redis Rate Limiter, Kênh/Nhóm có kiểm duyệt, cronjob 7/30/90 ngày. |
 
 *Chú giải*:  
@@ -30,6 +30,10 @@ Thay vì đánh đồng "có code" là "xong", hệ thống Chatible được đ
 ## 🎯 Chi Tiết Nâng Cấp Sau Đánh Giá PM (PM Review Implementations)
 
 ### 1. Tài khoản & Khả năng quay lại (Account & Retention)
+- **Xác minh email (Email Verification)**:
+  - Bảng `email_verification_tokens` lưu mã OTP 6 chữ số băm SHA-256 (hết hạn 15 phút, dùng 1 lần, cooldown gửi lại 60 giây, lỗi SMTP không làm gãy đăng ký).
+  - Đăng nhập Google tự động đánh dấu `emailVerifiedAt`; cấu hình Admin `auth.email_verification.required` (mặc định `'false'`, bật trên `/admin` để chặn người dùng chưa xác minh khỏi hàng chờ ghép đôi `MATCHING_JOIN` / `MATCHING_EXPAND_ACCEPT`).
+  - Hỗ trợ nhập OTP trực tiếp sau đăng ký (`VERIFY_EMAIL` trong `AuthModal`) hoặc xác minh bổ sung trong Hồ sơ (`ProfileView`).
 - **Quên và đặt lại mật khẩu**:
   - Bảng `password_reset_tokens` lưu mã ngẫu nhiên 6 chữ số có băm bảo mật SHA-256.
   - Hết hạn sau 15 phút, giới hạn 1 lần sử dụng, cooldown gửi lại mã 60 giây trên UI.
@@ -58,6 +62,9 @@ Thay vì đánh đồng "có code" là "xong", hệ thống Chatible được đ
 - **Kết luận xử lý rõ ràng của Quản trị viên**:
   - Bổ sung `resolution_conclusion` (`ACTION_TAKEN`, `DISMISSED`, `NO_VIOLATION`), `admin_note` và lưu vết `resolved_by`.
   - Quyết định xử lý có thể kích hoạt hạn chế tài khoản (`bannedUntil`, `isRestricted`).
+- **Chuyển trạng thái `IN_REVIEW` & Hộp thư Thông báo An toàn (Safety Notifications)**:
+  - Quản trị viên có thể tiếp nhận hồ sơ từ `OPEN` sang `IN_REVIEW` qua `POST /api/v1/admin/reports/:id/review` (kiểm tra lạc quan + ghi `AuditLog`).
+  - Bảng `user_notifications` cùng API `GET /api/v1/notifications` & `POST /api/v1/notifications/read` (mở cho cả tài khoản `ACTIVE` và `RESTRICTED`) gửi thông báo kết quả xử lý báo cáo (`REPORT_RESOLVED`), thông báo hạn chế tài khoản (`ACCOUNT_RESTRICTED`, **tuyệt đối ẩn danh tính người báo cáo**) và kết quả khiếu nại (`APPEAL_DECISION`) tới hộp thư chuông trên giao diện chính (kèm email không chặn nếu SMTP khả dụng).
 - **Luồng Khiếu nại (Appeals) khép kín**:
   - Quản trị viên tra cứu danh sách khiếu nại qua `GET /api/v1/admin/appeals`.
   - Phê duyệt / từ chối khiếu nại qua `POST /api/v1/admin/appeals/:id/resolve`.
@@ -100,21 +107,21 @@ bun test v1.4.2
 - src/matching/matching.spec.ts: 7 tests passed
 - src/kms/cloud-kms.spec.ts: 2 tests passed (AWS Cloud KMS wrap/unwrap + audit hooks, Production HTTPS S3, Cloud KMS & ADMIN_TOTP_SECRET validation)
 - src/crypto/envelope.spec.ts: 3 tests passed
-- src/auth/auth.spec.ts: 15 tests passed (Quên MK, Đổi MK, Xóa tài khoản, Rate limit, Google Auth Config, 18+, Stealth PIN)
+- src/auth/auth.spec.ts: 16 tests passed (Xác minh email OTP + cooldown 60s, Quên MK, Đổi MK, Xóa tài khoản, Rate limit, Google Auth Config, 18+, Stealth PIN)
 - src/auth/session-security.spec.ts: 2 tests passed (Cookie-only HttpOnly web auth, từ chối Bearer & token JSON, CSRF/Origin, Vault 423 + reload unlocked, Logout revocation, Redis limiter)
-- src/mail/mail.spec.ts: 2 tests passed (Mã hóa KMS mật khẩu SMTP, che giấu API, test SMTP, gửi OTP tự động)
+- src/mail/mail.spec.ts: 2 tests passed (Mã hóa KMS mật khẩu SMTP, che giấu API, test SMTP, gửi OTP xác minh email & đặt lại mật khẩu tự động)
 - src/admin/admin-hardening.spec.ts: 2 tests passed (TOTP MFA, chặn tắt MFA 403, cookie 15p Strict + CSRF, giải mã media Admin, chuỗi băm audit & E2E trên Chrome thật: login ➔ mở bằng chứng ➔ xử lý report)
-- src/admin/admin.controller.spec.ts: 4 tests passed (Cookie-only + tách biệt `chatible_admin_csrf`, Report resolution, Group takedown, Appeals, System Settings)
+- src/admin/admin.controller.spec.ts: 4 tests passed (Cookie-only + tách biệt `chatible_admin_csrf`, `IN_REVIEW` report route, Report resolution, Group takedown, Appeals, System Settings)
 - src/groups/groups.spec.ts: 1 test passed (BROADCAST chỉ Admin đăng, PUBLIC, PRIVATE_PASSCODE 403/unlock, Báo cáo/Chặn trong Nhóm & Admin gỡ tin)
-- src/safety/safety.spec.ts: 4 tests passed (Blocking, Evidence, Appeals)
-- src/realtime/chat.gateway.spec.ts: 3 tests passed (Cookie-only Socket.IO handshake, Multi-node gateway, Socket lifecycle, clientMessageId idempotency, kiểm mediaId READY, fail-closed emitGroupMessage & retry)
+- src/safety/safety.spec.ts: 5 tests passed (Blocking, Evidence, Appeals, `IN_REVIEW` & Safety Notifications ẩn danh người tố cáo)
+- src/realtime/chat.gateway.spec.ts: 4 tests passed (Cookie-only Socket.IO handshake, Multi-node gateway, chặn ghép đôi khi bật bắt buộc xác minh email, Socket lifecycle, clientMessageId idempotency, kiểm mediaId READY, fail-closed emitGroupMessage & retry)
 - src/sessions/recent-sessions.controller.spec.ts: 1 test passed
 - src/friends/friends.spec.ts: 5 tests passed (Offline messages, Request cooldowns, Media 1-1 & 18+)
 - src/cron/cleanup.spec.ts: 4 tests passed (Data retention, Storage safety, dọn phiên FRIEND & tin nhóm hết hạn)
 - src/media/media-worker.spec.ts: 1 test passed (Streaming GCM/magic-byte check, heartbeat worker & FFmpeg 503 readiness guard, 202 PROCESSING + Redis semaphore=1, FFmpeg worker offload, variant cache stream)
 - src/media/media.spec.ts: 11 tests passed (Complete upload & magic bytes, chặn bom ảnh >4096px/16.7MP, orphan cleanup, quyền 18+ & cam kết người gửi, watermark pixel thực tế, cache variant & SharpProcessingSemaphore 503)
 
-Tổng cộng: 67 pass / 0 fail / 517 expect() calls (16 files — 100% PASS)
+Tổng cộng: 70 pass / 0 fail / 554 expect() calls (16 files — 100% PASS)
 Typecheck: 0 lỗi trên toàn bộ monorepo (shared, backend, frontend)
 ESLint: 0 cảnh báo (--max-warnings=0)
 Production Build: Thành công 100% (shared, backend, frontend)

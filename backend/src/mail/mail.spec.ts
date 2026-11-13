@@ -173,9 +173,11 @@ describe('Admin SMTP Mail Configuration & Email Delivery', () => {
       expect(forgotRes.resetCode).toBeDefined();
       expect(forgotRes.message).toContain('đã được gửi tới email');
 
-      expect(sentOtps).toHaveLength(1);
+      expect(sentOtps).toHaveLength(2);
       expect(sentOtps[0]!.to).toBe(testEmail);
-      expect(sentOtps[0]!.html).toContain(forgotRes.resetCode!);
+      expect(sentOtps[0]!.subject).toContain('Xác minh');
+      expect(sentOtps[1]!.to).toBe(testEmail);
+      expect(sentOtps[1]!.html).toContain(forgotRes.resetCode!);
     } finally {
       if (createdUserId) {
         await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, createdUserId));

@@ -19,6 +19,17 @@ export interface UserPrivateProfile extends UserPublicProfile {
   preferredAgeMin: number;
   preferredAgeMax: number;
   mediaConsentDefault: boolean;
+  emailVerified?: boolean;
+}
+
+export interface UserNotificationDto {
+  id: string;
+  type: 'REPORT_RESOLVED' | 'ACCOUNT_RESTRICTED' | 'APPEAL_DECISION' | 'SYSTEM' | string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  relatedResourceId?: string | null;
+  createdAt: string;
 }
 
 export interface RegisterDto {

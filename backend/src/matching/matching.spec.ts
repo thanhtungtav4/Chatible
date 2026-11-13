@@ -160,4 +160,172 @@ describe('Atomic two-way matching queue', () => {
     expect(await engineA.getQueueSizeAsync()).toBe(0);
     expect(await engineB.getQueueSizeAsync()).toBe(0);
   });
+
+  it('skips blocked pairs via block checker and matches the next eligible indexed candidate', async () => {
+    const engine = newTestEngine();
+    engine.setBlockChecker((a, b) => (a === 'seeker' && b === 'blocked-b') || (a === 'blocked-b' && b === 'seeker'));
+
+    const blockedCandidate = makeUser({
+      userId: 'blocked-b',
+      socketId: 'sock-blocked',
+      gender: 'FEMALE',
+      age: 24,
+      targetGender: 'MALE',
+      ageMin: 20,
+      ageMax: 30,
+    });
+    const eligibleCandidate = makeUser({
+      userId: 'eligible-c',
+      socketId: 'sock-eligible',
+      gender: 'FEMALE',
+      age: 25,
+      targetGender: 'MALE',
+      ageMin: 20,
+      ageMax: 30,
+    });
+    const seeker = makeUser({
+      userId: 'seeker',
+      socketId: 'sock-seeker',
+      gender: 'MALE',
+      age: 25,
+      targetGender: 'FEMALE',
+      ageMin: 20,
+      ageMax: 30,
+    });
+
+    expect(await engine.enqueue(blockedCandidate)).toBeNull();
+    expect(await engine.enqueue(eligibleCandidate)).toBeNull();
+    const match = await engine.enqueue(seeker);
+    expect(match?.userB.userId).toBe('eligible-c');
+    expect(await engine.getQueueSizeAsync()).toBe(1);
+  });
+
+  it('updates index buckets cleanly when a queued user re-enqueues with updated preferences', async () => {
+    const namespace = `${testNamespace}:reenqueue`;
+    const engine = newTestEngine(namespace);
+
+    const oldEntry = makeUser({
+      userId: 'reuser',
+      socketId: 'sock-1',
+      gender: 'MALE',
+      age: 22,
+      targetGender: 'FEMALE',
+      ageMin: 20,
+      ageMax: 25,
+    });
+    const updatedEntry = makeUser({
+      userId: 'reuser',
+      socketId: 'sock-2',
+      gender: 'MALE',
+      age: 32,
+      targetGender: 'OTHER',
+      ageMin: 28,
+      ageMax: 35,
+    });
+    const oldTargetProbe = makeUser({
+      userId: 'female-probe',
+      socketId: 'sock-fp',
+      gender: 'FEMALE',
+      age: 23,
+      targetGender: 'MALE',
+      ageMin: 20,
+      ageMax: 25,
+    });
+
+    expect(await engine.enqueue(oldEntry)).toBeNull();
+    expect(await engine.enqueue(updatedEntry)).toBeNull();
+    expect(await engine.enqueue(oldTargetProbe)).toBeNull();
+    expect(await testRedis.zcard(`${namespace}:idx:MALE:FEMALE`)).toBe(0);
+    expect(await testRedis.zcard(`${namespace}:idx:MALE:OTHER`)).toBe(1);
+    expect(await engine.getQueueSizeAsync()).toBe(2);
+  });
+
+  it('matches eligible candidates strictly in FIFO enqueue order regardless of age', async () => {
+    const engine = newTestEngine();
+    const olderFirst = makeUser({
+      userId: 'older-first',
+      socketId: 'sock-30',
+      gender: 'FEMALE',
+      age: 30,
+      targetGender: 'MALE',
+      ageMin: 20,
+      ageMax: 35,
+    });
+    const youngerSecond = makeUser({
+      userId: 'younger-second',
+      socketId: 'sock-20',
+      gender: 'FEMALE',
+      age: 20,
+      targetGender: 'MALE',
+      ageMin: 20,
+      ageMax: 35,
+    });
+    const seeker1 = makeUser({
+      userId: 'seeker-1',
+      socketId: 'sock-s1',
+      gender: 'MALE',
+      age: 25,
+      targetGender: 'FEMALE',
+      ageMin: 18,
+      ageMax: 35,
+    });
+
+    expect(await engine.enqueue(olderFirst)).toBeNull();
+    expect(await engine.enqueue(youngerSecond)).toBeNull();
+
+    const firstMatch = await engine.enqueue(seeker1);
+    expect(firstMatch?.userB.userId).toBe('older-first');
+
+    const seeker2 = makeUser({
+      userId: 'seeker-2',
+      socketId: 'sock-s2',
+      gender: 'MALE',
+      age: 25,
+      targetGender: 'FEMALE',
+      ageMin: 18,
+      ageMax: 35,
+    });
+    const secondMatch = await engine.enqueue(seeker2);
+    expect(secondMatch?.userB.userId).toBe('younger-second');
+    expect(await engine.getQueueSizeAsync()).toBe(0);
+  });
+
+  it('preserves FIFO seniority when expandFilter updates an earlier waiting user', async () => {
+    const engine = newTestEngine();
+    const earlyWaiter = makeUser({
+      userId: 'early-waiter',
+      socketId: 'sock-early',
+      gender: 'FEMALE',
+      age: 30,
+      targetGender: 'MALE',
+      ageMin: 20,
+      ageMax: 24,
+    });
+    const lateWaiter = makeUser({
+      userId: 'late-waiter',
+      socketId: 'sock-late',
+      gender: 'FEMALE',
+      age: 22,
+      targetGender: 'MALE',
+      ageMin: 20,
+      ageMax: 30,
+    });
+
+    expect(await engine.enqueue(earlyWaiter)).toBeNull();
+    expect(await engine.enqueue(lateWaiter)).toBeNull();
+    // Expand earlyWaiter to 18..29; should stay ahead of lateWaiter when seeker aged 26 joins.
+    expect(await engine.expandFilter(earlyWaiter.userId)).toBeNull();
+
+    const seeker = makeUser({
+      userId: 'seeker-26',
+      socketId: 'sock-s26',
+      gender: 'MALE',
+      age: 26,
+      targetGender: 'FEMALE',
+      ageMin: 18,
+      ageMax: 35,
+    });
+    const match = await engine.enqueue(seeker);
+    expect(match?.userB.userId).toBe('early-waiter');
+  });
 });

@@ -1,32 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import { SocketEvents } from '@chatible/shared';
 import type { ChatState, UserPublicProfile, SendMessageDto, TargetGender } from '@chatible/shared';
-import { Search, Send, UserPlus, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, Eye, Ban, ShieldCheck, ArrowRight, Flame } from 'lucide-react';
-import { API_BASE_URL, apiFetch } from '../../api.js';
-import { AudioRecorder } from '../media/audio-recorder.js';
-import { ImageCompressor } from '../media/image-compressor.js';
-import {
-  fetchDecryptedMediaView,
-  revokeMediaAsset,
-  uploadAndFinalizeEncryptedMedia,
-} from '../media/encryptedMediaClient.js';
+import { Search, Send, UserPlus, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame } from 'lucide-react';
+import { API_BASE_URL } from '../../api.js';
+import { AdultReceiveConsentModal, AdultSenderCommitmentsModal } from '../media/AdultConsentModals.js';
+import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
+import { parseSessionMediaPayload, type SessionMediaMeta } from '../media/mediaPreviewLifecycle.js';
+import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionMedia.js';
+import { useSmartAutoScroll } from './useSmartAutoScroll.js';
 
-type MediaMessage = {
-  mediaId: string;
-  contentType: string;
-  mediaType: 'IMAGE' | 'AUDIO' | 'VIDEO';
-  waveform?: number[];
-  durationSec?: number;
-  width?: number;
-  height?: number;
-  isAdult?: boolean;
-  watermarkText?: string;
-  watermarkedMode?: 'embedded' | 'overlay';
-  previewUrl?: string;
-  revoked?: boolean;
-};
+type MediaMessage = SessionMediaMeta;
 
 function AudioWaveform({ samples, durationSec }: { samples: number[]; durationSec?: number }) {
   if (samples.length !== 30) return null;
@@ -46,45 +31,6 @@ function AudioWaveform({ samples, durationSec }: { samples: number[]; durationSe
 }
 type ChatMessage = { id: string; sender: 'me' | 'partner'; text: string; time: string; media?: MediaMessage };
 type ReportRequest = { sessionId: string; reportedUserId: string; evidenceMessageIds: string[] };
-
-function parseMediaMessage(content: string, expectedType: MediaMessage['mediaType']): MediaMessage | undefined {
-  try {
-    const parsed: unknown = JSON.parse(content);
-    if (!parsed || typeof parsed !== 'object') return undefined;
-    const value = parsed as Record<string, unknown>;
-    if (
-      typeof value.mediaId !== 'string' ||
-      !value.mediaId ||
-      typeof value.contentType !== 'string' ||
-      !/^(image|audio|video)\/[a-z0-9.+-]+$/i.test(value.contentType) ||
-      value.mediaType !== expectedType
-    ) return undefined;
-
-    const waveform = Array.isArray(value.waveform) &&
-      value.waveform.length === 30 &&
-      value.waveform.every((sample) => typeof sample === 'number' && Number.isFinite(sample) && sample >= 0 && sample <= 1)
-      ? value.waveform as number[]
-      : undefined;
-    const durationSec = typeof value.durationSec === 'number' && Number.isFinite(value.durationSec) && value.durationSec >= 0
-      ? value.durationSec
-      : undefined;
-    const width = Number.isSafeInteger(value.width) && (value.width as number) > 0 ? value.width as number : undefined;
-    const height = Number.isSafeInteger(value.height) && (value.height as number) > 0 ? value.height as number : undefined;
-    const isAdult = value.isAdult === true;
-    return {
-      mediaId: value.mediaId,
-      contentType: value.contentType,
-      mediaType: expectedType,
-      ...(isAdult ? { isAdult: true } : {}),
-      ...(waveform ? { waveform } : {}),
-      ...(durationSec !== undefined ? { durationSec } : {}),
-      ...(width !== undefined ? { width } : {}),
-      ...(height !== undefined ? { height } : {}),
-    };
-  } catch {
-    return undefined;
-  }
-}
 
 interface ChatEngineProps {
   currentUser: {
@@ -114,40 +60,87 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
   const [isFriendRequested, setIsFriendRequested] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [mediaConsent, setMediaConsent] = useState(false);
-  const [partnerMediaConsent, setPartnerMediaConsent] = useState(false);
-  const [myAdultConsent, setMyAdultConsent] = useState(false);
-  const [partnerAdultConsent, setPartnerAdultConsent] = useState(false);
-  const [showAdultConsentModal, setShowAdultConsentModal] = useState(false);
-  const [adultPolicyAck, setAdultPolicyAck] = useState(false);
-  const [sendAsAdult, setSendAsAdult] = useState(false);
-  const [showSenderAdultModal, setShowSenderAdultModal] = useState(false);
-  const [senderConfirm18Plus, setSenderConfirm18Plus] = useState(false);
-  const [senderConfirmConsent, setSenderConfirmConsent] = useState(false);
-  const [pendingMediaFile, setPendingMediaFile] = useState<File | null>(null);
-  const [pendingMediaType, setPendingMediaType] = useState<'IMAGE' | 'VIDEO' | null>(null);
-  const [mediaBusy, setMediaBusy] = useState(false);
-  const mediaInputRef = useRef<HTMLInputElement | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const ageSliderId = useId();
+  const {
+    scrollContainerRef,
+    endRef: messagesEndRef,
+    handleScroll: handleMessagesScroll,
+    unreadBelowCount,
+    showNewMessageButton,
+    scrollToBottom,
+  } = useSmartAutoScroll({
+    itemCount: messages.length,
+    resetKey: sessionId,
+    tailKey: messages[messages.length - 1]?.id ?? null,
+  });
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const shouldResumeRef = useRef(false);
-  const mediaPreviewUrlsRef = useRef(new Map<string, string>());
-  const mediaPreviewTimeoutsRef = useRef(new Map<string, number>());
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
 
-  const clearMediaPreview = (messageId: string) => {
-    const timeoutId = mediaPreviewTimeoutsRef.current.get(messageId);
-    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    mediaPreviewTimeoutsRef.current.delete(messageId);
-    const previewUrl = mediaPreviewUrlsRef.current.get(messageId);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    mediaPreviewUrlsRef.current.delete(messageId);
-  };
-  const clearAllMediaPreviews = () => {
-    for (const messageId of mediaPreviewUrlsRef.current.keys()) clearMediaPreview(messageId);
-  };
+  const emitSocketMediaMessage = useCallback(async ({ media, isAdult }: { media: UploadedSessionMedia; isAdult: boolean }) => {
+    const socket = socketRef.current;
+    if (!socket?.connected) throw new Error('Chưa kết nối máy chủ.');
+    const clientMessageId = crypto.randomUUID();
+    await new Promise<void>((resolve, reject) => {
+      socket.timeout(10_000).emit(
+        SocketEvents.MESSAGE_SEND,
+        {
+          type: media.mediaType,
+          content: JSON.stringify(media),
+          isAdultContent: isAdult,
+          clientMessageId,
+        } as SendMessageDto,
+        (timeoutError: Error | null, ack?: { success: boolean; error?: string; messageId?: string; sentAt?: string }) => {
+          if (timeoutError) {
+            reject(new Error('Máy chủ không phản hồi khi gửi media.'));
+            return;
+          }
+          if (!ack?.success || !ack.messageId) {
+            reject(new Error(ack?.error || 'Không gửi được media.'));
+            return;
+          }
+          setMessages((previous) => [...previous, {
+            id: ack.messageId as string,
+            sender: 'me',
+            text: isAdult
+              ? `🔞 ${media.mediaType === 'IMAGE' ? 'Ảnh 18+ đã gửi' : 'Video 18+ đã gửi'}`
+              : media.mediaType === 'IMAGE'
+              ? 'Ảnh đã gửi'
+              : media.mediaType === 'AUDIO'
+              ? 'Audio đã gửi'
+              : 'Video đã gửi',
+            media,
+            time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          }]);
+          resolve();
+        }
+      );
+    });
+  }, []);
+
+  const sessionMedia = useSessionMedia({
+    sessionId,
+    recipientId: partner?.id ?? null,
+    canSend: chatState === 'CHATTING',
+    voiceFilenamePrefix: 'voice',
+    partnerNotAdultConsentMessage: 'Đối phương chưa bật quyền "Nhận nội dung 18+". Hãy chờ đối phương đồng ý trước.',
+    onSendMediaMessage: emitSocketMediaMessage,
+    onError: setActionError,
+    onConsentChanged: (kind, enabled) => {
+      socketRef.current?.emit(
+        kind === 'MEDIA' ? SocketEvents.MEDIA_CONSENT_UPDATE : SocketEvents.MEDIA_ADULT_CONSENT_UPDATE,
+        { enabled }
+      );
+    },
+    onRevoked: (mediaId) => {
+      socketRef.current?.emit(SocketEvents.MEDIA_REVOKED, { mediaId });
+    },
+  });
+
+  const mediaHandlersRef = useRef(sessionMedia);
+  mediaHandlersRef.current = sessionMedia;
 
 
   useEffect(() => {
@@ -186,25 +179,8 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
       sessionIdRef.current = result.sessionId;
       shouldResumeRef.current = false;
       setSessionId(result.sessionId);
-      setMediaConsent(false);
-      setPartnerMediaConsent(false);
-      setMyAdultConsent(false);
-      setPartnerAdultConsent(false);
-      setSendAsAdult(false);
-      setShowAdultConsentModal(false);
-      setShowSenderAdultModal(false);
       setPartner(result.partner);
       setChatState('CHATTING');
-      void apiFetch(`/api/v1/media/consent/${encodeURIComponent(result.sessionId)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((state: { myMediaConsent?: boolean; partnerMediaConsent?: boolean; myAdultConsent?: boolean; partnerAdultConsent?: boolean } | null) => {
-          if (!state || sessionIdRef.current !== result.sessionId) return;
-          setMediaConsent(Boolean(state.myMediaConsent));
-          setPartnerMediaConsent(Boolean(state.partnerMediaConsent));
-          setMyAdultConsent(Boolean(state.myAdultConsent));
-          setPartnerAdultConsent(Boolean(state.partnerAdultConsent));
-        })
-        .catch(() => undefined);
     });
     socket.on(SocketEvents.MATCHING_ERROR, (result: { error?: string }) => {
       setConnectionError(result.error || 'Ghép đôi thất bại.');
@@ -214,10 +190,9 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
       const mediaType = message.type === 'IMAGE' || message.type === 'AUDIO' || message.type === 'VIDEO'
         ? message.type
         : null;
-      const media = mediaType ? parseMediaMessage(message.content, mediaType) : undefined;
-      if (media && (message.isAdultContent || media.isAdult)) {
-        media.isAdult = true;
-      }
+      const media = mediaType
+        ? parseSessionMediaPayload(message.content, mediaType, Boolean(message.isAdultContent))
+        : undefined;
       setMessages((previous) => [...previous, {
         id: message.id,
         sender: 'partner',
@@ -228,22 +203,26 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     });
     socket.on(SocketEvents.MEDIA_CONSENT_UPDATE, (payload: { sessionId?: string; enabled?: boolean }) => {
       if (!payload?.sessionId || payload.sessionId === sessionIdRef.current) {
-        setPartnerMediaConsent(Boolean(payload?.enabled));
+        mediaHandlersRef.current.setPartnerMediaConsent(Boolean(payload?.enabled));
       }
     });
     socket.on(SocketEvents.MEDIA_ADULT_CONSENT_UPDATE, (payload: { sessionId?: string; enabled?: boolean }) => {
       if (!payload?.sessionId || payload.sessionId === sessionIdRef.current) {
-        setPartnerAdultConsent(Boolean(payload?.enabled));
+        mediaHandlersRef.current.setPartnerAdultConsent(Boolean(payload?.enabled));
       }
     });
     socket.on(SocketEvents.MEDIA_REVOKED, (payload: { mediaId?: string }) => {
       if (!payload?.mediaId) return;
+      mediaHandlersRef.current.markMediaRevoked(
+        payload.mediaId,
+        messagesRef.current.map((item) => ({ messageId: item.id, mediaId: item.media?.mediaId }))
+      );
       setMessages((previous) =>
-        previous.map((item) => {
-          if (!item.media || item.media.mediaId !== payload.mediaId) return item;
-          clearMediaPreview(item.id);
-          return { ...item, media: { ...item.media, revoked: true, previewUrl: undefined } };
-        })
+        previous.map((item) =>
+          item.media && item.media.mediaId === payload.mediaId
+            ? { ...item, media: { ...item.media, revoked: true } }
+            : item
+        )
       );
     });
     socket.on(SocketEvents.CONNECTION_LOST, ({ timeoutSec }: { timeoutSec: number }) => {
@@ -264,12 +243,6 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     return () => {
       socket.disconnect();
       socketRef.current = null;
-      void audioRecorderRef.current?.cancel();
-      audioRecorderRef.current = null;
-      for (const timeoutId of mediaPreviewTimeoutsRef.current.values()) window.clearTimeout(timeoutId);
-      mediaPreviewTimeoutsRef.current.clear();
-      for (const previewUrl of mediaPreviewUrlsRef.current.values()) URL.revokeObjectURL(previewUrl);
-      mediaPreviewUrlsRef.current.clear();
     };
   }, [currentUser.id]);
 
@@ -293,17 +266,6 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     }, 1000);
     return () => window.clearInterval(interval);
   }, [chatState]);
-  useEffect(() => {
-    if (chatState === 'CHATTING' || !audioRecorderRef.current) return;
-    const recorder = audioRecorderRef.current;
-    audioRecorderRef.current = null;
-    setIsRecording(false);
-    void recorder.cancel();
-  }, [chatState]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const handleStartMatching = () => {
     const socket = socketRef.current;
@@ -314,7 +276,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     setConnectionError(null);
     setActionError(null);
     setIsFriendRequested(false);
-    clearAllMediaPreviews();
+    sessionMedia.clearAllMediaPreviews();
     setMessages([]);
     setPartner(null);
     setSessionId(null);
@@ -389,282 +351,6 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
       reportedUserId: partner.id,
       evidenceMessageIds: messages.map((message) => message.id),
     });
-  };
-  const handleConsentToggle = async () => {
-    if (!sessionId) return;
-    setMediaBusy(true);
-    try {
-      const enabled = !mediaConsent;
-      const response = await apiFetch('/api/v1/media/consent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, enabled }),
-      });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error || 'Không thể cập nhật quyền nhận media.');
-      setMediaConsent(enabled);
-      socketRef.current?.emit(SocketEvents.MEDIA_CONSENT_UPDATE, { enabled });
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Không thể cập nhật quyền nhận media.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const submitAdultConsent = async (enabled: boolean, policyAcknowledged: boolean) => {
-    if (!sessionId) return;
-    setMediaBusy(true);
-    try {
-      const response = await apiFetch('/api/v1/media/adult-consent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, enabled, policyAcknowledged }),
-      });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error || 'Không thể cập nhật quyền nhận nội dung 18+.');
-      setMyAdultConsent(enabled);
-      setShowAdultConsentModal(false);
-      setAdultPolicyAck(false);
-      socketRef.current?.emit(SocketEvents.MEDIA_ADULT_CONSENT_UPDATE, { enabled });
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Không thể cập nhật quyền nhận nội dung 18+.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleAdultConsentToggle = () => {
-    if (!sessionId) return;
-    if (myAdultConsent) {
-      void submitAdultConsent(false, false);
-    } else {
-      setAdultPolicyAck(false);
-      setShowAdultConsentModal(true);
-    }
-  };
-
-  const uploadEncryptedMedia = async (
-    file: File,
-    mediaType: MediaMessage['mediaType'],
-    additionalMedia: Pick<MediaMessage, 'waveform' | 'durationSec' | 'width' | 'height'> = {},
-    adultFlags: { isAdult?: boolean; senderConfirmed18Plus?: boolean; senderConfirmedConsent?: boolean } = {}
-  ): Promise<void> => {
-    if (!sessionId || !partner) throw new Error('Phiên chat đã kết thúc.');
-    const socket = socketRef.current;
-    if (!socket?.connected) throw new Error('Chưa kết nối máy chủ.');
-
-    const uploaded = await uploadAndFinalizeEncryptedMedia({
-      sessionId,
-      recipientId: partner.id,
-      file,
-      mediaType,
-      isAdult: adultFlags.isAdult,
-      senderConfirmed18Plus: adultFlags.senderConfirmed18Plus,
-      senderConfirmedConsent: adultFlags.senderConfirmedConsent,
-    });
-
-    const media: MediaMessage = {
-      mediaId: uploaded.mediaId,
-      contentType: uploaded.verifiedMime || uploaded.contentType,
-      mediaType,
-      ...(adultFlags.isAdult ? { isAdult: true } : {}),
-      ...additionalMedia,
-    };
-    const clientMessageId = crypto.randomUUID();
-    await new Promise<void>((resolve, reject) => {
-      socket.timeout(10_000).emit(
-        SocketEvents.MESSAGE_SEND,
-        {
-          type: mediaType,
-          content: JSON.stringify(media),
-          isAdultContent: Boolean(adultFlags.isAdult),
-          clientMessageId,
-        } as SendMessageDto,
-        (timeoutError: Error | null, ack?: { success: boolean; error?: string; messageId?: string; sentAt?: string }) => {
-          if (timeoutError) {
-            reject(new Error('Máy chủ không phản hồi khi gửi media.'));
-            return;
-          }
-          if (!ack?.success || !ack.messageId) {
-            reject(new Error(ack?.error || 'Không gửi được media.'));
-            return;
-          }
-          setMessages((previous) => [...previous, {
-            id: ack.messageId as string,
-            sender: 'me',
-            text: adultFlags.isAdult
-              ? `🔞 ${mediaType === 'IMAGE' ? 'Ảnh 18+ đã gửi' : 'Video 18+ đã gửi'}`
-              : mediaType === 'IMAGE'
-              ? 'Ảnh đã gửi'
-              : mediaType === 'AUDIO'
-              ? 'Audio đã gửi'
-              : 'Video đã gửi',
-            media,
-            time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          }]);
-          resolve();
-        }
-      );
-    });
-  };
-
-  const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !sessionId || !partner || chatState !== 'CHATTING') return;
-    const mediaType = file.type.startsWith('image/') ? 'IMAGE' : file.type.startsWith('audio/') ? 'AUDIO' : file.type.startsWith('video/') ? 'VIDEO' : null;
-    if (!mediaType) {
-      setActionError('Chỉ hỗ trợ ảnh, audio hoặc video.');
-      return;
-    }
-    const maxBytes = mediaType === 'IMAGE' ? 30_000_000 : mediaType === 'VIDEO' ? 100_000_000 : 20_000_000;
-    const limitLabel = mediaType === 'IMAGE' ? '30 MB' : mediaType === 'VIDEO' ? '100 MB' : '20 MB';
-    if (file.size >= maxBytes) {
-      setActionError(`${mediaType === 'IMAGE' ? 'Ảnh' : mediaType === 'VIDEO' ? 'Video' : 'Ghi âm'} phải nhỏ hơn ${limitLabel}.`);
-      return;
-    }
-    if (sendAsAdult && (mediaType === 'IMAGE' || mediaType === 'VIDEO')) {
-      if (!partnerAdultConsent) {
-        setActionError('Đối phương chưa bật quyền "Nhận nội dung 18+". Hãy chờ đối phương đồng ý trước.');
-        return;
-      }
-      setPendingMediaFile(file);
-      setPendingMediaType(mediaType);
-      setSenderConfirm18Plus(false);
-      setSenderConfirmConsent(false);
-      setShowSenderAdultModal(true);
-      return;
-    }
-    setMediaBusy(true);
-    try {
-      if (mediaType === 'IMAGE') {
-        const compressed = await ImageCompressor.compress(file);
-        await uploadEncryptedMedia(compressed.file, mediaType, { width: compressed.width, height: compressed.height });
-      } else {
-        await uploadEncryptedMedia(file, mediaType);
-      }
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Không thể gửi media.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleToggleRecording = async () => {
-    if (!sessionId || !partner || mediaBusy || chatState !== 'CHATTING') return;
-    if (!isRecording) {
-      const recorder = new AudioRecorder();
-      try {
-        await recorder.start();
-        audioRecorderRef.current = recorder;
-        setActionError(null);
-        setIsRecording(true);
-      } catch (error) {
-        setActionError(error instanceof Error ? error.message : 'Không thể bắt đầu ghi âm.');
-        await recorder.cancel();
-      }
-      return;
-    }
-
-    const recorder = audioRecorderRef.current;
-    if (!recorder) {
-      setIsRecording(false);
-      return;
-    }
-    setMediaBusy(true);
-    try {
-      const recording = await recorder.stop();
-      audioRecorderRef.current = null;
-      setIsRecording(false);
-      const extension = recording.blob.type.includes('mp4') ? 'm4a' : 'webm';
-      const file = new File([recording.blob], `voice-${Date.now()}.${extension}`, { type: recording.blob.type });
-      await uploadEncryptedMedia(file, 'AUDIO', {
-        durationSec: recording.durationSeconds,
-        waveform: recording.waveform,
-      });
-    } catch (error) {
-      audioRecorderRef.current = null;
-      setIsRecording(false);
-      await recorder.cancel();
-      setActionError(error instanceof Error ? error.message : 'Không thể gửi bản ghi âm.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const confirmAdultSenderUpload = async () => {
-    if (!pendingMediaFile || !pendingMediaType || !senderConfirm18Plus || !senderConfirmConsent) return;
-    const file = pendingMediaFile;
-    const mediaType = pendingMediaType;
-    setShowSenderAdultModal(false);
-    setPendingMediaFile(null);
-    setPendingMediaType(null);
-    setMediaBusy(true);
-    setActionError(null);
-    try {
-      const adultFlags = {
-        isAdult: true,
-        senderConfirmed18Plus: true,
-        senderConfirmedConsent: true,
-      };
-      if (mediaType === 'IMAGE') {
-        const compressed = await ImageCompressor.compress(file);
-        await uploadEncryptedMedia(
-          compressed.file,
-          mediaType,
-          { width: compressed.width, height: compressed.height },
-          adultFlags
-        );
-      } else {
-        await uploadEncryptedMedia(file, mediaType, {}, adultFlags);
-      }
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Không gửi được nội dung 18+.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleViewMedia = async (message: ChatMessage) => {
-    if (!message.media || message.media.revoked) return;
-    setMediaBusy(true);
-    try {
-      const view = await fetchDecryptedMediaView(message.media.mediaId, message.media.contentType);
-      clearMediaPreview(message.id);
-      mediaPreviewUrlsRef.current.set(message.id, view.previewUrl);
-      mediaPreviewTimeoutsRef.current.set(message.id, window.setTimeout(() => {
-        URL.revokeObjectURL(view.previewUrl);
-        mediaPreviewUrlsRef.current.delete(message.id);
-        mediaPreviewTimeoutsRef.current.delete(message.id);
-        setMessages((previous) => previous.map((item) => item.id === message.id ? { ...item, media: { ...item.media as MediaMessage, previewUrl: undefined } } : item));
-      }, (view.expiresIn || 300) * 1000));
-      setMessages((previous) => previous.map((item) => item.id === message.id ? {
-        ...item,
-        media: {
-          ...item.media as MediaMessage,
-          previewUrl: view.previewUrl,
-          watermarkText: view.watermarkText,
-          watermarkedMode: view.watermarkedMode,
-        },
-      } : item));
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Không thể mở media.');
-    } finally {
-      setMediaBusy(false);
-    }
-  };
-
-  const handleRevokeMedia = async (message: ChatMessage) => {
-    if (!message.media || message.sender !== 'me') return;
-    clearMediaPreview(message.id);
-    setMessages((previous) => previous.map((item) => item.id === message.id ? { ...item, media: { ...item.media as MediaMessage, previewUrl: undefined } } : item));
-    try {
-      await revokeMediaAsset(message.media.mediaId);
-      socketRef.current?.emit(SocketEvents.MEDIA_REVOKED, { mediaId: message.media.mediaId });
-      setMessages((previous) => previous.map((item) => item.id === message.id ? { ...item, media: { ...item.media as MediaMessage, revoked: true, previewUrl: undefined } } : item));
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Không thể thu hồi media.');
-    }
   };
 
   const formatTime = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
@@ -745,13 +431,14 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
             {/* Age Range Slider */}
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800">Khoảng tuổi tối đa</span>
+                <label htmlFor={ageSliderId} className="text-xs font-bold text-slate-800">Khoảng tuổi tối đa</label>
                 <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700 border border-blue-200/60">
                   18 – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
                 </span>
               </div>
               <div className="mt-3 px-1">
                 <input
+                  id={ageSliderId}
                   type="range"
                   min="18"
                   max="50"
@@ -843,30 +530,30 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={handleConsentToggle}
-                  disabled={mediaBusy}
-                  title={mediaConsent ? 'Đang bật nhận ảnh/video' : 'Bật/tắt quyền nhận media'}
+                  onClick={sessionMedia.handleConsentToggle}
+                  disabled={sessionMedia.mediaBusy}
+                  title={sessionMedia.mediaConsent ? 'Đang bật nhận ảnh/video' : 'Bật/tắt quyền nhận media'}
                   className={`relative rounded-full p-2 transition ${
-                    mediaConsent ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    sessionMedia.mediaConsent ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                   }`}
                 >
                   <ShieldCheck size={16} />
-                  {mediaConsent && (
+                  {sessionMedia.mediaConsent && (
                     <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-500 shadow-sm" />
                   )}
                 </button>
                 <button
                   type="button"
-                  onClick={handleAdultConsentToggle}
-                  disabled={mediaBusy}
-                  aria-pressed={myAdultConsent}
-                  title={myAdultConsent ? 'Đang bật nhận nội dung 18+' : 'Bật/tắt nhận nội dung 18+'}
+                  onClick={sessionMedia.handleAdultConsentToggle}
+                  disabled={sessionMedia.mediaBusy}
+                  aria-pressed={sessionMedia.myAdultConsent}
+                  title={sessionMedia.myAdultConsent ? 'Đang bật nhận nội dung 18+' : 'Bật/tắt nhận nội dung 18+'}
                   className={`relative rounded-full p-2 transition ${
-                    myAdultConsent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    sessionMedia.myAdultConsent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                   }`}
                 >
                   <Flame size={16} />
-                  {myAdultConsent && (
+                  {sessionMedia.myAdultConsent && (
                     <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500 shadow-sm" />
                   )}
                 </button>
@@ -890,85 +577,53 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
             )}
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex flex-col ${message.sender === 'me' ? 'items-end' : 'items-start'}`}>
-                <div className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-xs ${message.sender === 'me' ? 'bg-blue-600 text-white shadow-sm' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
-                  {message.media ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <span>{message.text}</span>
-                        {message.media.isAdult && (
-                          <span className="rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[9px] font-bold">
-                            🔞 18+
-                          </span>
-                        )}
-                      </div>
-                      {message.media.previewUrl && message.media.mediaType === 'IMAGE' && (
-                        <div className="relative select-none">
-                          <img
-                            src={message.media.previewUrl}
-                            alt={message.media.watermarkText || 'Media'}
-                            draggable={false}
-                            onContextMenu={(event) => event.preventDefault()}
-                            className="max-h-56 select-none rounded-lg"
-                          />
-                          {message.media.watermarkedMode !== 'embedded' && message.media.watermarkText && (
-                            <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-black/55 px-1 py-0.5 text-[9px] text-white">
-                              {message.media.watermarkText}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {message.media.mediaType === 'AUDIO' && (
-                        <>
-                          {message.media.waveform && <AudioWaveform samples={message.media.waveform} durationSec={message.media.durationSec} />}
-                          {message.media.previewUrl && (
-                            <audio
-                              controls
-                              controlsList="nodownload"
-                              onContextMenu={(event) => event.preventDefault()}
-                              src={message.media.previewUrl}
-                              className="max-w-full"
-                            />
-                          )}
-                        </>
-                      )}
-                      {message.media.previewUrl && message.media.mediaType === 'VIDEO' && (
-                        <div className="relative select-none">
-                          <video
-                            controls
-                            controlsList="nodownload noplaybackrate"
-                            disablePictureInPicture
-                            onContextMenu={(event) => event.preventDefault()}
-                            src={message.media.previewUrl}
-                            className="max-h-56 rounded-lg"
-                          />
-                          {message.media.watermarkedMode !== 'embedded' && message.media.watermarkText && (
-                            <span className="pointer-events-none absolute inset-x-1 bottom-8 rounded bg-black/55 px-1 py-0.5 text-[9px] text-white">
-                              {message.media.watermarkText}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {!message.media.previewUrl && !message.media.revoked && (
-                        <button onClick={() => handleViewMedia(message)} disabled={mediaBusy} className="flex items-center gap-1 rounded-full bg-white/80 px-2 py-1 text-[11px] font-bold text-blue-700">
-                          <Eye size={12} />Xem trong 5 phút
-                        </button>
-                      )}
-                      {message.media.revoked && <span className="text-[10px] opacity-70">Media đã bị thu hồi</span>}
-                      {message.sender === 'me' && !message.media.revoked && (
-                        <button onClick={() => handleRevokeMedia(message)} className="flex items-center gap-1 text-[10px] font-semibold opacity-80 hover:opacity-100">
-                          <Ban size={11} />Thu hồi quyền xem
-                        </button>
-                      )}
-                    </div>
-                  ) : message.text}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleMessagesScroll}
+              className="flex-1 space-y-3 overflow-y-auto p-4"
+            >
+              {messages.map((message) => (
+                <div key={message.id} className={`flex flex-col ${message.sender === 'me' ? 'items-end' : 'items-start'}`}>
+                  <div className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-xs ${message.sender === 'me' ? 'bg-blue-600 text-white shadow-sm' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
+                    {message.media ? (
+                      <MediaAttachmentPreview
+                        title={message.text}
+                        mediaType={message.media.mediaType}
+                        isAdult={message.media.isAdult}
+                        isMine={message.sender === 'me'}
+                        viewState={sessionMedia.mediaViews[message.id]}
+                        revokedFallback={message.media.revoked}
+                        busy={sessionMedia.mediaBusy}
+                        audioExtra={
+                          message.media.waveform ? (
+                            <AudioWaveform samples={message.media.waveform} durationSec={message.media.durationSec} />
+                          ) : null
+                        }
+                        onView={() => void sessionMedia.openMediaPreview(message.id, message.media!.mediaId, message.media!.contentType)}
+                        onRevoke={() => {
+                          if (!message.media || message.sender !== 'me') return;
+                          void sessionMedia.revokeMediaPreview(message.id, message.media.mediaId);
+                        }}
+                      />
+                    ) : message.text}
+                  </div>
+                  <span className="mt-0.5 px-1 text-[9px] text-slate-400">{message.time}</span>
                 </div>
-                <span className="mt-0.5 px-1 text-[9px] text-slate-400">{message.time}</span>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {showNewMessageButton && (
+              <button
+                type="button"
+                onClick={() => scrollToBottom('smooth')}
+                className="absolute bottom-3 right-4 z-10 inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-lg shadow-blue-500/30 transition hover:bg-blue-700"
+              >
+                <span>Tin mới ({unreadBelowCount})</span>
+                <ArrowDown size={14} aria-hidden="true" />
+              </button>
+            )}
           </div>
 
           {chatState === 'ENDED' ? (
@@ -984,48 +639,48 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
             <div className="border-t border-slate-100 bg-white">
               <div className="flex items-center justify-between border-b border-slate-50 px-3 py-1.5 text-[10px] text-slate-500">
                 <span>
-                  Media: {partnerMediaConsent ? 'Đối phương bật nhận' : 'Đối phương tắt nhận'} ·{' '}
-                  18+: {partnerAdultConsent ? 'Đối phương đồng ý' : 'Chưa đồng ý 18+'}
+                  Media: {sessionMedia.partnerMediaConsent ? 'Đối phương bật nhận' : 'Đối phương tắt nhận'} ·{' '}
+                  18+: {sessionMedia.partnerAdultConsent ? 'Đối phương đồng ý' : 'Chưa đồng ý 18+'}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setSendAsAdult((prev) => !prev)}
-                  aria-pressed={sendAsAdult}
+                  onClick={() => sessionMedia.setSendAsAdult((prev) => !prev)}
+                  aria-pressed={sessionMedia.sendAsAdult}
                   className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold transition ${
-                    sendAsAdult ? 'bg-rose-100 text-rose-700 ring-1 ring-rose-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    sessionMedia.sendAsAdult ? 'bg-rose-100 text-rose-700 ring-1 ring-rose-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                   title="Đánh dấu ảnh/video sắp gửi là nội dung người lớn 18+"
                 >
                   <Flame size={11} />
-                  <span>{sendAsAdult ? 'Đang bật gửi 18+' : 'Nội dung người lớn'}</span>
+                  <span>{sessionMedia.sendAsAdult ? 'Đang bật gửi 18+' : 'Nội dung người lớn'}</span>
                 </button>
               </div>
               <form onSubmit={handleSendMessage} className="flex items-center gap-1.5 p-2.5">
-                <input ref={mediaInputRef} type="file" accept={sendAsAdult ? 'image/*,video/*' : 'image/*,audio/*,video/*'} onChange={handleFileSelected} className="hidden" />
+                <input ref={sessionMedia.mediaInputRef} type="file" accept={sessionMedia.sendAsAdult ? 'image/*,video/*' : 'image/*,audio/*,video/*'} onChange={sessionMedia.handleFileSelected} className="hidden" />
                 <button
                   type="button"
-                  onClick={() => mediaInputRef.current?.click()}
-                  disabled={mediaBusy || isRecording}
-                  title={sendAsAdult ? 'Gửi ảnh/video 18+ (cần đồng thuận 2 bên)' : 'Gửi ảnh/video; người nhận cần bật quyền nhận media'}
+                  onClick={() => sessionMedia.mediaInputRef.current?.click()}
+                  disabled={sessionMedia.mediaBusy || sessionMedia.isRecording}
+                  title={sessionMedia.sendAsAdult ? 'Gửi ảnh/video 18+ (cần đồng thuận 2 bên)' : 'Gửi ảnh/video; người nhận cần bật quyền nhận media'}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 active:scale-95 disabled:opacity-40"
                 >
                   <ImagePlus size={16} />
                 </button>
               <button
                 type="button"
-                onClick={handleToggleRecording}
-                disabled={mediaBusy}
-                aria-label={isRecording ? 'Dừng và gửi ghi âm' : 'Bắt đầu ghi âm'}
-                title={isRecording ? 'Dừng và gửi ghi âm' : 'Ghi âm; người nhận cần bật quyền nhận media'}
+                onClick={sessionMedia.handleToggleRecording}
+                disabled={sessionMedia.mediaBusy}
+                aria-label={sessionMedia.isRecording ? 'Dừng và gửi ghi âm' : 'Bắt đầu ghi âm'}
+                title={sessionMedia.isRecording ? 'Dừng và gửi ghi âm' : 'Ghi âm; người nhận cần bật quyền nhận media'}
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-95 disabled:opacity-40 ${
-                  isRecording
+                  sessionMedia.isRecording
                     ? 'animate-pulse bg-rose-600 text-white shadow-md shadow-rose-600/30'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
                 <Mic size={16} />
               </button>
-              {isRecording ? (
+              {sessionMedia.isRecording ? (
                 <div className="flex flex-1 items-center justify-between rounded-full bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 border border-rose-200">
                   <span className="flex items-center gap-1.5">
                     <span className="h-2 w-2 animate-ping rounded-full bg-rose-500" />
@@ -1044,7 +699,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
               )}
               <button
                 type="submit"
-                disabled={!inputMessage.trim() || mediaBusy || isRecording}
+                disabled={!inputMessage.trim() || sessionMedia.mediaBusy || sessionMedia.isRecording}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-700 active:scale-95 disabled:opacity-40"
               >
                 <Send size={15} />
@@ -1055,114 +710,27 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
         </div>
       )}
 
-      {/* Modal: Adult Receive Consent (ADULT-11) */}
-      {showAdultConsentModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-              <Flame size={24} />
-            </div>
-            <h3 className="mt-3 text-center text-sm font-bold text-slate-900">
-              Bật quyền nhận nội dung 18+?
-            </h3>
-            <p className="mt-2 text-[11.5px] leading-relaxed text-slate-600">
-              Bạn sắp cho phép đối phương gửi ảnh hoặc video nhạy cảm (18+) trong phiên trò chuyện này. Quyền này chỉ áp dụng riêng cho phiên hiện tại và có thể tắt bất kỳ lúc nào. Ảnh/video được đóng dấu truy vết theo tài khoản xem; tuy nhiên hệ thống không thể ngăn tuyệt đối thiết bị khác chụp màn hình và Quản trị viên có thể kiểm tra bằng chứng nếu có báo cáo vi phạm.
-            </p>
-            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl bg-slate-50 p-2.5 text-[11px] text-slate-700">
-              <input
-                type="checkbox"
-                checked={adultPolicyAck}
-                onChange={(event) => setAdultPolicyAck(event.target.checked)}
-                className="mt-0.5 rounded text-rose-600 focus:ring-rose-500"
-              />
-              <span>Tôi xác nhận đã đọc cảnh báo an toàn 18+ và tự nguyện đồng ý nhận nội dung người lớn trong phiên này.</span>
-            </label>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAdultConsentModal(false)}
-                className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                disabled={!adultPolicyAck || mediaBusy}
-                onClick={() => void submitAdultConsent(true, true)}
-                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/30 hover:bg-rose-700 disabled:opacity-50"
-              >
-                Đồng ý bật 18+
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AdultReceiveConsentModal
+        open={sessionMedia.showAdultConsentModal}
+        description="Bạn sắp cho phép đối phương gửi ảnh hoặc video nhạy cảm (18+) trong phiên trò chuyện này. Quyền này chỉ áp dụng riêng cho phiên hiện tại và có thể tắt bất kỳ lúc nào. Ảnh/video được đóng dấu truy vết theo tài khoản xem; tuy nhiên hệ thống không thể ngăn tuyệt đối thiết bị khác chụp màn hình và Quản trị viên có thể kiểm tra bằng chứng nếu có báo cáo vi phạm."
+        ackLabel="Tôi xác nhận đã đọc cảnh báo an toàn 18+ và tự nguyện đồng ý nhận nội dung người lớn trong phiên này."
+        adultPolicyAck={sessionMedia.adultPolicyAck}
+        busy={sessionMedia.mediaBusy}
+        onAckChange={sessionMedia.setAdultPolicyAck}
+        onCancel={() => sessionMedia.setShowAdultConsentModal(false)}
+        onConfirm={() => void sessionMedia.submitAdultConsent(true, true)}
+      />
 
-      {/* Modal: Adult Sender Commitments (ADULT-04) */}
-      {showSenderAdultModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600">
-              <AlertTriangle size={24} />
-            </div>
-            <h3 className="mt-3 text-center text-sm font-bold text-slate-900">
-              Xác nhận trước khi gửi nội dung 18+
-            </h3>
-            <p className="mt-1.5 text-center text-[11px] text-slate-500">
-              Yêu cầu bắt buộc theo chính sách an toàn trước khi mã hóa và tải tệp lên.
-            </p>
-            <div className="mt-3 space-y-2 text-[11px] text-slate-700">
-              <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-slate-50 p-2.5">
-                <input
-                  type="checkbox"
-                  checked={senderConfirm18Plus}
-                  onChange={(event) => setSenderConfirm18Plus(event.target.checked)}
-                  className="mt-0.5 rounded text-rose-600"
-                />
-                <span>Tôi xác nhận mọi nhân vật trong nội dung này đều đủ 18 tuổi trở lên.</span>
-              </label>
-              <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-slate-50 p-2.5">
-                <input
-                  type="checkbox"
-                  checked={senderConfirmConsent}
-                  onChange={(event) => setSenderConfirmConsent(event.target.checked)}
-                  className="mt-0.5 rounded text-rose-600"
-                />
-                <span>Tôi xác nhận nội dung có sự đồng thuận hợp pháp, không xâm phạm riêng tư hoặc quấy rối.</span>
-              </label>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSenderAdultModal(false);
-                  setPendingMediaFile(null);
-                  setPendingMediaType(null);
-                }}
-                className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                disabled={!senderConfirm18Plus || !senderConfirmConsent || mediaBusy}
-                onClick={() => void confirmAdultSenderUpload()}
-                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/30 hover:bg-rose-700 disabled:opacity-50"
-              >
-                Xác nhận & Gửi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AdultSenderCommitmentsModal
+        open={sessionMedia.showSenderAdultModal}
+        confirm18Plus={sessionMedia.senderConfirm18Plus}
+        confirmConsent={sessionMedia.senderConfirmConsent}
+        busy={sessionMedia.mediaBusy}
+        onConfirm18PlusChange={sessionMedia.setSenderConfirm18Plus}
+        onConfirmConsentChange={sessionMedia.setSenderConfirmConsent}
+        onCancel={sessionMedia.cancelSenderAdultModal}
+        onSubmit={() => void sessionMedia.confirmSenderAdultUpload()}
+      />
 
       {/* Confirmation Dialog: End Chat */}
       {showEndConfirm && (
