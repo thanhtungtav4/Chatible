@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import { SocketEvents } from '@chatible/shared';
 import type { ChatState, UserPublicProfile, SendMessageDto, TargetGender } from '@chatible/shared';
-import { Search, Send, UserPlus, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame } from 'lucide-react';
+import { Search, Send, UserPlus, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft } from 'lucide-react';
 import { API_BASE_URL } from '../../api.js';
 import { AdultReceiveConsentModal, AdultSenderCommitmentsModal } from '../media/AdultConsentModals.js';
 import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
@@ -44,9 +44,10 @@ interface ChatEngineProps {
     preferredAgeMax?: number;
   };
   onOpenReport: (request: ReportRequest) => void;
+  resetTrigger?: number;
 }
 
-export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
+export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngineProps) {
   const [chatState, setChatState] = useState<ChatState>('IDLE');
   const [targetGender, setTargetGender] = useState<TargetGender>(
     (currentUser.preferredGender as TargetGender) || 'ALL'
@@ -349,6 +350,36 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     setChatState('IDLE');
   };
 
+  const handleBackToIdle = useCallback(() => {
+    triggerHaptic('light');
+    if (chatState === 'WAITING') {
+      socketRef.current?.emit(SocketEvents.MATCHING_CANCEL);
+      setChatState('IDLE');
+      return;
+    }
+    if (chatState === 'CHATTING') {
+      setShowEndConfirm(true);
+      return;
+    }
+    sessionIdRef.current = null;
+    partnerRef.current = null;
+    setSessionId(null);
+    setPartner(null);
+    setMessages([]);
+    setIsFriendRequested(false);
+    sessionMedia.clearAllMediaPreviews();
+    setChatState('IDLE');
+  }, [chatState, sessionMedia]);
+
+  const isInitialResetMount = useRef(true);
+  useEffect(() => {
+    if (isInitialResetMount.current) {
+      isInitialResetMount.current = false;
+      return;
+    }
+    handleBackToIdle();
+  }, [resetTrigger, handleBackToIdle]);
+
   const handleSendMessage = (event: React.FormEvent) => {
     event.preventDefault();
     const socket = socketRef.current;
@@ -591,11 +622,37 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
 
       {(chatState === 'CHATTING' || chatState === 'ENDED') && (
         <div className="flex flex-1 flex-col justify-between overflow-hidden">
-          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{partner?.nickname.slice(0, 2) || 'MT'}</div>
-              <div><div className="flex items-center gap-1.5"><span className="text-xs font-bold text-slate-800">{partner?.nickname || 'Người lạ'}</span><span className="rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-500">{partner?.gender === 'FEMALE' ? 'Nữ' : 'Nam'} • {partner?.age ?? '—'}t</span></div><span className="text-[10px] font-medium text-emerald-600">● {chatState === 'CHATTING' ? 'Đang trò chuyện' : 'Đã kết thúc'}</span></div>
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBackToIdle}
+                title={chatState === 'CHATTING' ? 'Thoát ra trang tìm bạn' : 'Quay về trang tìm bạn mới'}
+                aria-label={chatState === 'CHATTING' ? 'Thoát ra trang tìm bạn' : 'Quay về trang tìm bạn mới'}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition active:scale-95"
+              >
+                <ArrowLeft size={16} />
+              </button>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{partner?.nickname.slice(0, 2) || 'MT'}</div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-800 truncate">{partner?.nickname || 'Người lạ'}</span>
+                  <span className="shrink-0 rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-500">{partner?.gender === 'FEMALE' ? 'Nữ' : 'Nam'} • {partner?.age ?? '—'}t</span>
+                </div>
+                <span className={`text-[10px] font-medium ${chatState === 'CHATTING' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  ● {chatState === 'CHATTING' ? 'Đang trò chuyện' : 'Đã kết thúc'}
+                </span>
+              </div>
             </div>
+            {chatState === 'ENDED' && (
+              <button
+                type="button"
+                onClick={handleBackToIdle}
+                className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200 transition active:scale-95"
+              >
+                Về tìm bạn
+              </button>
+            )}
             {chatState === 'CHATTING' && (
               <div className="flex items-center gap-1.5">
                 <button
@@ -698,11 +755,47 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
 
           {chatState === 'ENDED' ? (
             <div className="flex flex-col gap-2.5 border-t border-slate-100 bg-white p-4">
-              <p className="text-center text-xs font-medium text-slate-500">Cuộc trò chuyện đã kết thúc. Bạn có thể tìm người mới hoặc kết bạn.</p>
+              <div className="text-center">
+                <p className="text-xs font-bold text-slate-800">Cuộc trò chuyện đã kết thúc</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">Bạn có thể quay lại trang tìm bạn để chỉnh bộ lọc hoặc tìm người mới ngay.</p>
+              </div>
               <div className="flex items-center gap-2">
-                <button onClick={handleNextChat} className="flex-1 rounded-full bg-blue-600 py-3 text-xs font-extrabold text-white shadow-md shadow-blue-500/25">Tìm người mới</button>
-                <button onClick={handleSendFriendRequest} disabled={isFriendRequested} className={`flex flex-1 items-center justify-center gap-1 rounded-full border py-3 text-xs font-bold ${isFriendRequested ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : 'border-slate-200 bg-slate-50 text-slate-700'}`}><UserPlus size={14} /><span>{isFriendRequested ? 'Đã gửi lời mời' : 'Kết bạn'}</span></button>
-                <button onClick={handleReport} className="rounded-full bg-rose-50 px-3.5 py-3 text-xs font-bold text-rose-600">Báo cáo</button>
+                <button
+                  type="button"
+                  onClick={handleBackToIdle}
+                  className="flex-1 rounded-full border border-slate-200 bg-slate-50 py-3 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition"
+                >
+                  ← Về trang tìm bạn
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextChat}
+                  className="flex-1 rounded-full bg-blue-600 py-3 text-xs font-extrabold text-white shadow-md shadow-blue-500/25 active:scale-95 transition"
+                >
+                  Tìm người mới ngay
+                </button>
+              </div>
+              <div className="flex items-center gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleSendFriendRequest}
+                  disabled={isFriendRequested}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-full border py-2.5 text-xs font-semibold ${
+                    isFriendRequested
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <UserPlus size={14} />
+                  <span>{isFriendRequested ? 'Đã gửi lời mời' : 'Kết bạn với người này'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReport}
+                  className="rounded-full bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-100"
+                >
+                  Báo cáo
+                </button>
               </div>
             </div>
           ) : (
@@ -825,20 +918,41 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
               Bạn vẫn có thể xem lại lịch sử trò chuyện trong vòng 7 ngày và gửi lời mời kết bạn từ tab{' '}
               <strong>Gần đây</strong>.
             </p>
-            <div className="mt-5 flex gap-2">
+            <div className="mt-5 flex flex-col gap-2">
               <button
                 type="button"
-                onClick={() => setShowEndConfirm(false)}
-                className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                onClick={() => {
+                  setShowEndConfirm(false);
+                  socketRef.current?.emit(SocketEvents.CHAT_END);
+                  sessionIdRef.current = null;
+                  partnerRef.current = null;
+                  setSessionId(null);
+                  setPartner(null);
+                  setMessages([]);
+                  setIsFriendRequested(false);
+                  sessionMedia.clearAllMediaPreviews();
+                  setChatState('IDLE');
+                }}
+                className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-600/30 hover:bg-blue-700"
               >
-                Tiếp tục chat
+                Kết thúc & Về trang tìm bạn
               </button>
               <button
                 type="button"
-                onClick={handleEndChat}
-                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/30 hover:bg-rose-700"
+                onClick={() => {
+                  setShowEndConfirm(false);
+                  handleNextChat();
+                }}
+                className="w-full rounded-xl bg-slate-100 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200"
               >
-                Kết thúc ngay
+                Kết thúc & Tìm người khác ngay
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEndConfirm(false)}
+                className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+              >
+                Tiếp tục trò chuyện
               </button>
             </div>
           </div>

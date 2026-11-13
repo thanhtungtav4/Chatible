@@ -36,6 +36,7 @@ export default function App() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isStealthLocked, setIsStealthLocked] = useState(false);
+  const [chatResetTrigger, setChatResetTrigger] = useState(0);
   const notifDialogRef = useRef<HTMLDialogElement>(null);
   const notifHeadingId = useId();
   const knownNotifIdsRef = useRef<Set<string> | null>(null);
@@ -234,12 +235,22 @@ export default function App() {
           className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3 md:px-5 md:pt-7"
           style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))' }}
         >
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setActiveTab('chat');
+              setChatResetTrigger((v) => v + 1);
+            }}
+            title="Trở về trang tìm bạn mới"
+            aria-label="Trở về trang tìm bạn mới"
+            className="flex items-center gap-2 rounded-2xl p-1 -ml-1 transition hover:bg-slate-100 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 font-bold text-white shadow-md overflow-hidden">
               <img src="/favicon.svg" alt="Chatible" className="h-full w-full object-cover" />
             </div>
             <span className="font-extrabold tracking-tight text-slate-900">Chatible</span>
-          </div>
+          </button>
           {userProfile && isAuthenticated ? (
             <div className="flex items-center gap-2">
               {!pwa.isStandalone && (
@@ -344,6 +355,7 @@ export default function App() {
                       preferredAgeMax: userProfile.preferredAgeMax,
                     }}
                     onOpenReport={handleReport}
+                    resetTrigger={chatResetTrigger}
                   />
                 </div>
               ) : activeTab === 'chat' ? (
@@ -391,7 +403,13 @@ export default function App() {
                 ))}
 
                 {activeTab === 'recent' && (isAuthenticated ? (
-                  <RecentSessionsView onOpenChat={() => setActiveTab('chat')} onOpenReport={handleReport} />
+                  <RecentSessionsView
+                    onOpenChat={() => {
+                      setActiveTab('chat');
+                      setChatResetTrigger((v) => v + 1);
+                    }}
+                    onOpenReport={handleReport}
+                  />
                 ) : (
                   <section className="flex h-full flex-col items-center justify-center px-5 text-center">
                     <Clock3 className="mb-3 text-blue-600" size={36} />
@@ -428,7 +446,19 @@ export default function App() {
           }}
           aria-label="Điều hướng chính"
         >
-          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('chat'); }} aria-current={activeTab === 'chat' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'chat' ? 'text-blue-600' : 'text-slate-400'}`}>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              if (activeTab === 'chat') {
+                setChatResetTrigger((v) => v + 1);
+              } else {
+                setActiveTab('chat');
+              }
+            }}
+            aria-current={activeTab === 'chat' ? 'page' : undefined}
+            className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'chat' ? 'text-blue-600' : 'text-slate-400'}`}
+          >
             <MessageSquare size={18} aria-hidden="true" /><span>Chat</span>
           </button>
           <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('friends'); }} aria-current={activeTab === 'friends' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'friends' ? 'text-blue-600' : 'text-slate-400'}`}>
