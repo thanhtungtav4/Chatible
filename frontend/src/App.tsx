@@ -344,7 +344,7 @@ export default function App() {
           onClick={(e) => {
             if (e.target === notifDialogRef.current) setIsNotifOpen(false);
           }}
-          className="mb-0 mt-auto w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-hidden rounded-t-3xl bg-white p-0 shadow-2xl open:flex open:flex-col md:m-auto md:w-[calc(100%-2rem)] md:rounded-3xl backdrop:bg-black/50 backdrop:backdrop-blur-sm"
+          className="mb-0 mt-auto w-full max-w-sm h-auto max-h-[85dvh] overflow-hidden rounded-t-3xl border-none bg-white p-0 shadow-2xl open:flex open:flex-col md:m-auto md:w-[calc(100%-2rem)] md:rounded-3xl backdrop:bg-black/50 backdrop:backdrop-blur-sm"
         >
           {isNotifOpen && isAuthenticated && (
             <>
@@ -373,7 +373,7 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-5 pb-5 pt-3">
+              <div className="overflow-y-auto overscroll-contain max-h-[calc(85dvh-64px)] w-full space-y-2.5 px-5 pb-5 pt-3 flex-1">
                 {notifications.length === 0 ? (
                   <p className="py-8 text-center text-xs text-slate-400">
                     Chưa có thông báo xử lý báo cáo hoặc khiếu nại nào.

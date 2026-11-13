@@ -364,7 +364,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       onClick={(e) => {
         if (e.target === dialogRef.current) onClose();
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-sm max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[32px] bg-white p-0 text-left shadow-2xl open:flex open:flex-col backdrop:bg-black/60 backdrop:backdrop-blur-sm"
+      className="m-auto w-[calc(100%-1.5rem)] max-w-md h-auto max-h-[90dvh] overflow-hidden rounded-[28px] sm:rounded-[32px] border-none bg-white p-0 text-left shadow-2xl open:flex open:flex-col backdrop:bg-black/60 backdrop:backdrop-blur-sm"
     >
       {isOpen && (
         <>
@@ -396,7 +396,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-4">
+          <div className="overflow-y-auto overscroll-contain px-5 pb-6 pt-4 max-h-[calc(90dvh-64px)] w-full flex-1">
             {/* Header Tabs for REGISTER & LOGIN */}
             {(mode === 'REGISTER' || mode === 'LOGIN') && (
               <div className="mb-4 flex rounded-full bg-slate-100 p-1" role="tablist" aria-label="Chọn đăng ký hoặc đăng nhập">

@@ -13,7 +13,14 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+dialog {
+  margin: auto;
+  border: none;
+}
+
 dialog:modal {
+  max-width: 100vw;
+  max-height: 100dvh;
   overscroll-behavior: contain;
 }
 
