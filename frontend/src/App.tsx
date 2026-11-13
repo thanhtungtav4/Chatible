@@ -1,10 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AuthResponse, UserNotificationDto } from '@chatible/shared';
-import { Bell, CheckCheck, Clock3, MessageSquare, MessagesSquare, ShieldAlert, User, UsersRound, X } from 'lucide-react';
+import { Bell, CheckCheck, Clock3, MessageSquare, MessagesSquare, ShieldAlert, Smartphone, User, UsersRound, X } from 'lucide-react';
 import { apiFetch } from './api.js';
 import { AuthModal } from './features/auth/AuthModal.js';
 import { ChatEngine } from './features/chat/ChatEngine.js';
 import { syncStealthState, triggerPushNotification } from './features/notifications/pushNotification.js';
+import { usePwaInstall } from './features/pwa/usePwaInstall.js';
+import { PwaInstallModal } from './features/pwa/PwaInstallModal.js';
 
 const FriendsView = lazy(() => import('./features/friends/FriendsView.js').then((m) => ({ default: m.FriendsView })));
 const GroupsView = lazy(() => import('./features/groups/GroupsView.js').then((m) => ({ default: m.GroupsView })));
@@ -34,6 +36,7 @@ export default function App() {
   const notifDialogRef = useRef<HTMLDialogElement>(null);
   const notifHeadingId = useId();
   const knownNotifIdsRef = useRef<Set<string> | null>(null);
+  const pwa = usePwaInstall();
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -193,6 +196,17 @@ export default function App() {
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 font-bold text-white shadow-md">C</div>
             <span className="font-extrabold tracking-tight text-slate-900">Chatible</span>
+            {!pwa.isStandalone && (
+              <button
+                type="button"
+                onClick={() => void pwa.triggerInstall()}
+                className="flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200/60 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition shadow-xs"
+                title="Cài đặt ứng dụng Chatible (Shortapp)"
+              >
+                <Smartphone size={12} className="text-blue-600 shrink-0" />
+                <span className="hidden xs:inline">Shortapp</span>
+              </button>
+            )}
           </div>
           {userProfile && isAuthenticated ? (
             <div className="flex items-center gap-2">
@@ -426,6 +440,14 @@ export default function App() {
             </>
           )}
         </dialog>
+
+        <PwaInstallModal
+          isOpen={pwa.showGuideModal}
+          onClose={() => pwa.setShowGuideModal(false)}
+          isIOS={pwa.isIOS}
+          canPromptNative={pwa.canPromptNative}
+          onPromptNative={() => void pwa.triggerInstall()}
+        />
       </div>
 
       <footer className="mt-3 hidden md:flex items-center gap-4 text-xs text-slate-500">

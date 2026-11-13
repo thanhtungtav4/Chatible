@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
+  Smartphone,
   Trash2,
   UserX,
 } from 'lucide-react';
@@ -28,6 +29,8 @@ import {
   triggerPushNotification,
   isNotificationSupported,
 } from '../notifications/pushNotification.js';
+import { usePwaInstall } from '../pwa/usePwaInstall.js';
+import { PwaInstallModal } from '../pwa/PwaInstallModal.js';
 
 type UserProfile = AuthResponse['profile'];
 
@@ -86,6 +89,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
   const [isSavingStealth, setIsSavingStealth] = useState(false);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission>(() => getNotificationPermission());
   const [testNotifFeedback, setTestNotifFeedback] = useState<string | null>(null);
+  const pwa = usePwaInstall();
 
   // Change Password State
   const [isPasswordOpen, setIsPasswordOpen] = useState(false);
@@ -1100,7 +1104,48 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
         </div>
       </section>
 
-      {/* 9. Danger Zone: Delete Account */}
+      {/* 9. Shortapp / PWA Installation */}
+      <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Smartphone size={17} className="text-blue-600" />
+            <div>
+              <h2 className="text-xs font-bold text-slate-800">Cài đặt ứng dụng (Shortapp)</h2>
+              <p className="text-[11px] text-slate-500">Mở toàn màn hình ngoài màn hình chính</p>
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+              pwa.isStandalone
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-blue-50 text-blue-700 border border-blue-200'
+            }`}
+          >
+            {pwa.isStandalone ? '✓ Đang chạy Shortapp' : 'Chưa cài đặt'}
+          </span>
+        </div>
+
+        <div className="mt-3 space-y-2.5 border-t border-slate-100 pt-3">
+          <p className="text-[11px] leading-relaxed text-slate-600">
+            {pwa.isStandalone
+              ? 'Ứng dụng Chatible đã được thêm vào màn hình chính của bạn và đang hoạt động ở chế độ độc lập toàn màn hình mượt mà.'
+              : 'Tạo lối tắt ứng dụng Chatible ngoài màn hình chính điện thoại hoặc máy tính để truy cập ngay lập tức, toàn màn hình và nhận thông báo mượt mà hơn.'}
+          </p>
+
+          {!pwa.isStandalone && (
+            <button
+              type="button"
+              onClick={() => pwa.triggerInstall()}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 px-3 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition"
+            >
+              <Smartphone size={14} />
+              <span>Tạo Shortapp ra màn hình chính</span>
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* 10. Danger Zone: Delete Account */}
       <section className="rounded-2xl border border-rose-100 bg-rose-50/20 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
@@ -1173,6 +1218,14 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
           </div>
         </div>
       )}
+
+      <PwaInstallModal
+        isOpen={pwa.showGuideModal}
+        onClose={() => pwa.setShowGuideModal(false)}
+        isIOS={pwa.isIOS}
+        canPromptNative={pwa.canPromptNative}
+        onPromptNative={() => void pwa.triggerInstall()}
+      />
     </div>
   );
 }
