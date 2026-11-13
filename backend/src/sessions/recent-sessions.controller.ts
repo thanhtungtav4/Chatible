@@ -3,6 +3,7 @@ import { db } from '../database/index.js';
 import { chatSessions } from '../database/schema/sessions.js';
 import { profiles } from '../database/schema/users.js';
 import { messages } from '../database/schema/messages.js';
+import { friendships } from '../database/schema/friends.js';
 import { eq, or, and, desc, sql, gt, isNotNull, inArray } from 'drizzle-orm';
 import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
 import { verifyVaultUnlocked } from '../auth/session-auth.util.js';
@@ -55,25 +56,47 @@ export class RecentSessionsController {
         );
         const sessionIds = rows.map((s) => s.id);
 
-        const [partnerProfiles, messageCounts] = await Promise.all([
-          db
-            .select({
-              userId: profiles.userId,
-              nickname: profiles.nickname,
-              gender: profiles.gender,
-              calculatedAge: profiles.calculatedAge,
-            })
-            .from(profiles)
-            .where(inArray(profiles.userId, partnerIds)),
-          db
-            .select({
-              sessionId: messages.sessionId,
-              count: sql<number>`count(*)::int`,
-            })
-            .from(messages)
-            .where(inArray(messages.sessionId, sessionIds))
-            .groupBy(messages.sessionId),
+        const [partnerProfiles, messageCounts, activeFriendships] = await Promise.all([
+          partnerIds.length > 0
+            ? db
+                .select({
+                  userId: profiles.userId,
+                  nickname: profiles.nickname,
+                  gender: profiles.gender,
+                  calculatedAge: profiles.calculatedAge,
+                })
+                .from(profiles)
+                .where(inArray(profiles.userId, partnerIds))
+            : Promise.resolve([]),
+          sessionIds.length > 0
+            ? db
+                .select({
+                  sessionId: messages.sessionId,
+                  count: sql<number>`count(*)::int`,
+                })
+                .from(messages)
+                .where(inArray(messages.sessionId, sessionIds))
+                .groupBy(messages.sessionId)
+            : Promise.resolve([]),
+          partnerIds.length > 0
+            ? db
+                .select({
+                  user1Id: friendships.user1Id,
+                  user2Id: friendships.user2Id,
+                })
+                .from(friendships)
+                .where(
+                  or(
+                    and(eq(friendships.user1Id, userId), inArray(friendships.user2Id, partnerIds)),
+                    and(eq(friendships.user2Id, userId), inArray(friendships.user1Id, partnerIds))
+                  )
+                )
+            : Promise.resolve([]),
         ]);
+
+        const friendPartnerIdSet = new Set(
+          activeFriendships.map((f) => (f.user1Id === userId ? f.user2Id : f.user1Id))
+        );
 
         const profileMap = new Map(partnerProfiles.map((p) => [p.userId, p]));
         const countMap = new Map(messageCounts.map((c) => [c.sessionId, Number(c.count)]));
@@ -96,6 +119,7 @@ export class RecentSessionsController {
             endedAt: s.endedAt || s.startedAt,
             expiresAt: s.expiresAt,
             remainingDays,
+            isFriend: friendPartnerIdSet.has(partnerId),
           };
         });
 

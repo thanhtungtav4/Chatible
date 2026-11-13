@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Ban, ChevronDown, ChevronUp, Clock3, EyeOff, Lock, MessageSquareText, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Ban, Check, ChevronDown, ChevronUp, Clock3, EyeOff, Lock, MessageSquareText, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '../../api.js';
 
 type RecentSession = {
@@ -12,6 +12,7 @@ type RecentSession = {
   expiresAt: string;
   remainingDays: number;
   partnerId: string;
+  isFriend?: boolean;
 };
 
 type SessionMessage = {
@@ -39,6 +40,7 @@ export function RecentSessionsView({ onOpenChat, onOpenReport }: RecentSessionsV
   const [error, setError] = useState<string | null>(null);
   const [sendingPartnerIds, setSendingPartnerIds] = useState<Set<string>>(() => new Set());
   const [sentPartnerIds, setSentPartnerIds] = useState<Set<string>>(() => new Set());
+  const [friendPartnerIds, setFriendPartnerIds] = useState<Set<string>>(() => new Set());
   const [friendRequestErrors, setFriendRequestErrors] = useState<Record<string, string>>({});
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [sessionMessages, setSessionMessages] = useState<Record<string, SessionMessage[]>>({});
@@ -130,7 +132,13 @@ export function RecentSessionsView({ onOpenChat, onOpenReport }: RecentSessionsV
       }
       const payload = (await response.json().catch(() => ({}))) as { sessions?: RecentSession[]; error?: string };
       if (!response.ok) throw new Error(payload.error || 'Không thể tải phiên gần đây.');
-      setSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+      const sessionList = Array.isArray(payload.sessions) ? payload.sessions : [];
+      setSessions(sessionList);
+      const friends = new Set<string>();
+      for (const s of sessionList) {
+        if (s.isFriend) friends.add(s.partnerId);
+      }
+      setFriendPartnerIds(friends);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Không thể tải phiên gần đây.');
     } finally {
@@ -236,13 +244,35 @@ export function RecentSessionsView({ onOpenChat, onOpenReport }: RecentSessionsV
         body: JSON.stringify({ targetUserId: partnerId }),
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'Không thể gửi lời mời kết bạn.');
+      if (!response.ok) {
+        const errorText = payload.error || '';
+        if (errorText === 'Hai bạn đã là bạn bè.' || errorText.includes('đã là bạn bè')) {
+          setFriendPartnerIds((current) => new Set(current).add(partnerId));
+          setFriendRequestErrors((current) => {
+            const next = { ...current };
+            delete next[partnerId];
+            return next;
+          });
+          return;
+        }
+        throw new Error(payload.error || 'Không thể gửi lời mời kết bạn.');
+      }
       setSentPartnerIds((current) => new Set(current).add(partnerId));
     } catch (requestError) {
-      setFriendRequestErrors((current) => ({
-        ...current,
-        [partnerId]: requestError instanceof Error ? requestError.message : 'Không thể gửi lời mời kết bạn.',
-      }));
+      const errMsg = requestError instanceof Error ? requestError.message : 'Không thể gửi lời mời kết bạn.';
+      if (errMsg === 'Hai bạn đã là bạn bè.' || errMsg.includes('đã là bạn bè')) {
+        setFriendPartnerIds((current) => new Set(current).add(partnerId));
+        setFriendRequestErrors((current) => {
+          const next = { ...current };
+          delete next[partnerId];
+          return next;
+        });
+      } else {
+        setFriendRequestErrors((current) => ({
+          ...current,
+          [partnerId]: errMsg,
+        }));
+      }
     } finally {
       setSendingPartnerIds((current) => {
         const next = new Set(current);
@@ -426,18 +456,25 @@ export function RecentSessionsView({ onOpenChat, onOpenReport }: RecentSessionsV
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void sendFriendRequest(session.partnerId)}
-                  disabled={sendingPartnerIds.has(session.partnerId) || sentPartnerIds.has(session.partnerId)}
-                  className="rounded-full border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {sentPartnerIds.has(session.partnerId)
-                    ? 'Đã gửi lời mời'
-                    : sendingPartnerIds.has(session.partnerId)
-                      ? 'Đang gửi…'
-                      : 'Gửi lời mời kết bạn'}
-                </button>
+                {session.isFriend || friendPartnerIds.has(session.partnerId) ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                    <Check size={13} />
+                    <span>Đã là bạn bè</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void sendFriendRequest(session.partnerId)}
+                    disabled={sendingPartnerIds.has(session.partnerId) || sentPartnerIds.has(session.partnerId)}
+                    className="rounded-full border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {sentPartnerIds.has(session.partnerId)
+                      ? 'Đã gửi lời mời'
+                      : sendingPartnerIds.has(session.partnerId)
+                        ? 'Đang gửi…'
+                        : 'Gửi lời mời kết bạn'}
+                  </button>
+                )}
 
                 <button
                   type="button"

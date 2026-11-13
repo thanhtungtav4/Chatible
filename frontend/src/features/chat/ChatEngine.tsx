@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import { SocketEvents } from '@chatible/shared';
 import type { ChatState, UserPublicProfile, SendMessageDto, TargetGender } from '@chatible/shared';
-import { Search, Send, UserPlus, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft } from 'lucide-react';
+import { Search, Send, UserPlus, Check, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '../../api.js';
 import { AdultReceiveConsentModal, AdultSenderCommitmentsModal } from '../media/AdultConsentModals.js';
 import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
@@ -61,6 +61,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isFriendRequested, setIsFriendRequested] = useState(false);
+  const [isAlreadyFriend, setIsAlreadyFriend] = useState(false);
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -168,6 +169,29 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       isCurrent = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!partner?.id) {
+      setIsAlreadyFriend(false);
+      return;
+    }
+    let isCurrent = true;
+    void apiFetch('/api/v1/friends')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { friends?: Array<{ userId: string }> } | null) => {
+        if (!isCurrent) return;
+        if (data?.friends && Array.isArray(data.friends)) {
+          const isFriend = data.friends.some((f) => f.userId === partner.id);
+          if (isFriend) {
+            setIsAlreadyFriend(true);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isCurrent = false;
+    };
+  }, [partner?.id]);
 
   useEffect(() => {
     const socket = io(API_BASE_URL, {
@@ -335,6 +359,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     setConnectionError(null);
     setActionError(null);
     setIsFriendRequested(false);
+    setIsAlreadyFriend(false);
     setIsFilterExpanded(false);
     sessionMedia.clearAllMediaPreviews();
     setMessages([]);
@@ -397,6 +422,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     setPartner(null);
     setMessages([]);
     setIsFriendRequested(false);
+    setIsAlreadyFriend(false);
     sessionMedia.clearAllMediaPreviews();
     setChatState('IDLE');
   }, [chatState, sessionMedia]);
@@ -448,8 +474,21 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const handleSendFriendRequest = () => {
     if (!partner) return;
     socketRef.current?.emit(SocketEvents.FRIEND_REQUEST_SEND, { targetUserId: partner.id }, (ack: { success: boolean; error?: string }) => {
-      if (ack?.success) setIsFriendRequested(true);
-      else setActionError(ack?.error || 'Không gửi được lời mời kết bạn.');
+      if (ack?.success) {
+        setIsFriendRequested(true);
+        setActionError(null);
+      } else {
+        const err = ack?.error || '';
+        if (err === 'Hai bạn đã là bạn bè.' || err.includes('đã là bạn bè')) {
+          setIsAlreadyFriend(true);
+          setActionError(null);
+        } else if (err.includes('đang chờ xử lý')) {
+          setIsFriendRequested(true);
+          setActionError(null);
+        } else {
+          setActionError(err || 'Không gửi được lời mời kết bạn.');
+        }
+      }
     });
   };
 
@@ -830,19 +869,26 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                 </button>
               </div>
               <div className="flex items-center gap-2 pt-0.5">
-                <button
-                  type="button"
-                  onClick={handleSendFriendRequest}
-                  disabled={isFriendRequested}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-full border py-2.5 text-xs font-semibold ${
-                    isFriendRequested
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <UserPlus size={14} />
-                  <span>{isFriendRequested ? 'Đã gửi lời mời' : 'Kết bạn với người này'}</span>
-                </button>
+                {isAlreadyFriend ? (
+                  <div className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-emerald-50 py-2.5 text-xs font-bold text-emerald-700">
+                    <Check size={14} />
+                    <span>Hai bạn đã là bạn bè</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSendFriendRequest}
+                    disabled={isFriendRequested}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-full border py-2.5 text-xs font-semibold ${
+                      isFriendRequested
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <UserPlus size={14} />
+                    <span>{isFriendRequested ? 'Đã gửi lời mời' : 'Kết bạn với người này'}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleReport}
@@ -984,6 +1030,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                   setPartner(null);
                   setMessages([]);
                   setIsFriendRequested(false);
+                  setIsAlreadyFriend(false);
                   sessionMedia.clearAllMediaPreviews();
                   setChatState('IDLE');
                 }}
