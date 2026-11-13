@@ -4,7 +4,7 @@ import type { Socket } from 'socket.io-client';
 import { SocketEvents } from '@chatible/shared';
 import type { ChatState, UserPublicProfile, SendMessageDto, TargetGender } from '@chatible/shared';
 import { Search, Send, UserPlus, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft } from 'lucide-react';
-import { API_BASE_URL } from '../../api.js';
+import { API_BASE_URL, apiFetch } from '../../api.js';
 import { AdultReceiveConsentModal, AdultSenderCommitmentsModal } from '../media/AdultConsentModals.js';
 import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
 import { parseSessionMediaPayload, type SessionMediaMeta } from '../media/mediaPreviewLifecycle.js';
@@ -64,6 +64,10 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [liveStats, setLiveStats] = useState<{ onlineCount: number; waitingCount: number }>({
+    onlineCount: 0,
+    waitingCount: 0,
+  });
   const ageSliderId = useId();
   const {
     scrollContainerRef,
@@ -147,6 +151,23 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const mediaHandlersRef = useRef(sessionMedia);
   mediaHandlersRef.current = sessionMedia;
 
+  useEffect(() => {
+    let isCurrent = true;
+    void apiFetch('/api/v1/stats/live')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { onlineCount?: number; waitingCount?: number } | null) => {
+        if (isCurrent && data && typeof data.onlineCount === 'number') {
+          setLiveStats({
+            onlineCount: Math.max(1, data.onlineCount),
+            waitingCount: data.waitingCount || 0,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   useEffect(() => {
     const socket = io(API_BASE_URL, {
@@ -154,6 +175,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       transports: ['websocket', 'polling'],
     });
     socketRef.current = socket;
+
+    socket.on(SocketEvents.ONLINE_COUNT_UPDATE, (stats: { onlineCount?: number; waitingCount?: number }) => {
+      if (stats && typeof stats.onlineCount === 'number') {
+        setLiveStats({
+          onlineCount: Math.max(1, stats.onlineCount),
+          waitingCount: stats.waitingCount || 0,
+        });
+      }
+    });
 
     socket.on('connect_error', (error: Error) => {
       setConnectionError(`Không thể kết nối: ${error.message}`);
@@ -460,9 +490,25 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                 QD
               </div>
             </div>
-            <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700 shadow-sm">
-              <span className="h-2 w-2 animate-ping rounded-full bg-emerald-500" />
-              <span>Sẵn sàng kết nối • Ghép đôi 1–1</span>
+            <div className="mt-2.5 inline-flex items-center gap-2 rounded-full border border-emerald-200/90 bg-emerald-50/90 px-3.5 py-1.5 text-xs font-bold text-emerald-800 shadow-xs">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+              </span>
+              <span>
+                {liveStats.onlineCount > 0 ? (
+                  <>
+                    <strong className="font-extrabold text-emerald-950">{liveStats.onlineCount.toLocaleString()}</strong> người đang online
+                  </>
+                ) : (
+                  'Đang kết nối hệ thống…'
+                )}
+              </span>
+              {liveStats.waitingCount > 0 && (
+                <span className="rounded-full bg-emerald-200/80 px-2 py-0.5 text-[10.5px] font-bold text-emerald-900">
+                  {liveStats.waitingCount} đang chờ ghép
+                </span>
+              )}
             </div>
 
             <h1 className="mt-3 text-xl font-extrabold tracking-tight text-slate-900">
@@ -574,6 +620,14 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
             • 18 – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
             {isFilterExpanded && <span className="ml-1 font-semibold text-emerald-600">(Đã mở rộng)</span>}
           </p>
+
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-800">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>{Math.max(1, liveStats.onlineCount)} người online</span>
+            {liveStats.waitingCount > 0 && (
+              <span>• {liveStats.waitingCount} người trong hàng chờ</span>
+            )}
+          </div>
 
           {isFilterExpanded ? (
             <div className="mt-4 flex flex-col items-center rounded-2xl border border-emerald-200 bg-emerald-50/90 p-3 text-xs shadow-sm animate-in fade-in duration-200 max-w-[280px]">

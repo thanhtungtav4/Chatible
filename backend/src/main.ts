@@ -267,6 +267,14 @@ async function bootstrap() {
   groupsService.setOnGroupMessage((roomId, msg) => chatGateway.emitGroupMessage(roomId, msg));
   chatGateway.setGroupAccessChecker((userId, roomId) => groupsService.hasRoomAccess(userId, roomId));
 
+  app.get('/api/v1/stats/live', async (_req, reply) => {
+    return reply.status(200).send({
+      onlineCount: chatGateway.getOnlineCount(),
+      waitingCount: chatGateway.getWaitingCount(),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   adminController.setUserRevoker(async (userId) => {
     await tokenRevocationStore.revokeUserTokensBefore(userId, Date.now());
     await chatGateway.revokeUser(userId);

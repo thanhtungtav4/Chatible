@@ -45,6 +45,9 @@ export const SocketEvents = {
   GROUP_JOIN: 'group:join',
   GROUP_LEAVE: 'group:leave',
   GROUP_MESSAGE_RECEIVE: 'group:message_receive',
+
+  // Realtime Live Stats
+  ONLINE_COUNT_UPDATE: 'online:count',
 } as const;
 
 export type SocketEventName = (typeof SocketEvents)[keyof typeof SocketEvents];

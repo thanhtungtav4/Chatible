@@ -76,6 +76,34 @@ export class ChatGateway {
     retriesSucceeded: 0,
   };
 
+  private onlineStatsDebounceTimer: NodeJS.Timeout | null = null;
+  private onlineStatsPeriodicTimer?: NodeJS.Timeout;
+
+  getOnlineCount(): number {
+    return new Set(this.socketToUser.values()).size;
+  }
+
+  getWaitingCount(): number {
+    return this.matchingEngine.getQueueSize();
+  }
+
+  getLiveStats(): { onlineCount: number; waitingCount: number } {
+    return {
+      onlineCount: this.getOnlineCount(),
+      waitingCount: this.getWaitingCount(),
+    };
+  }
+
+  broadcastOnlineStats(): void {
+    if (this.onlineStatsDebounceTimer) return;
+    this.onlineStatsDebounceTimer = setTimeout(() => {
+      this.onlineStatsDebounceTimer = null;
+      if (this.isClosing) return;
+      this.io.emit(SocketEvents.ONLINE_COUNT_UPDATE, this.getLiveStats());
+    }, 400);
+    this.onlineStatsDebounceTimer.unref();
+  }
+
   setRedis(redis: Redis): void {
     this.messageLimiter.setRedis(redis);
     this.matchingLimiter.setRedis(redis);
@@ -200,6 +228,14 @@ export class ChatGateway {
       clearInterval(this.matchingSweepTimer);
       this.matchingSweepTimer = undefined;
     }
+    if (this.onlineStatsDebounceTimer) {
+      clearTimeout(this.onlineStatsDebounceTimer);
+      this.onlineStatsDebounceTimer = null;
+    }
+    if (this.onlineStatsPeriodicTimer) {
+      clearInterval(this.onlineStatsPeriodicTimer);
+      this.onlineStatsPeriodicTimer = undefined;
+    }
     this.failedGroupDeliveries = [];
     await Promise.all([...this.pendingDisconnects, ...this.pendingGroupEmits]);
     for (const session of this.activeSessions.values()) {
@@ -235,6 +271,14 @@ export class ChatGateway {
         }
       }, 2500);
       this.matchingSweepTimer.unref();
+    }
+
+    if (!this.onlineStatsPeriodicTimer) {
+      this.onlineStatsPeriodicTimer = setInterval(() => {
+        if (this.isClosing) return;
+        this.io.emit(SocketEvents.ONLINE_COUNT_UPDATE, this.getLiveStats());
+      }, 5000);
+      this.onlineStatsPeriodicTimer.unref();
     }
 
     await this.sessionCoordinator.subscribe(async (notification) => {
@@ -295,6 +339,8 @@ export class ChatGateway {
 
       this.socketToUser.set(socket.id, authUser.userId);
       (socket.data as { userId?: string }).userId = authUser.userId;
+      socket.emit(SocketEvents.ONLINE_COUNT_UPDATE, this.getLiveStats());
+      this.broadcastOnlineStats();
       const userRoomReady = Promise.resolve(socket.join(this.userRoom(authUser.userId))).catch((error: unknown) => {
         console.error('[Chat] Could not join user room:', error);
         socket.disconnect(true);
@@ -332,6 +378,7 @@ export class ChatGateway {
 
         try {
           const match = await this.matchingEngine.enqueue(queuedUser);
+          this.broadcastOnlineStats();
           if (match) await this.activateMatch(match);
         } catch (err: unknown) {
           console.error('[Matching] Could not find an eligible partner:', err);
@@ -342,7 +389,10 @@ export class ChatGateway {
       // 2. Cancel Matching
       socket.on(SocketEvents.MATCHING_CANCEL, async () => {
         const userId = this.socketToUser.get(socket.id);
-        if (userId) await this.matchingEngine.dequeue(userId);
+        if (userId) {
+          await this.matchingEngine.dequeue(userId);
+          this.broadcastOnlineStats();
+        }
       });
 
       socket.on(SocketEvents.MATCHING_EXPAND_ACCEPT, async (_payload?: unknown, ack?: (res: { success: boolean; expanded: boolean }) => void) => {
@@ -675,6 +725,7 @@ export class ChatGateway {
   }
 
   private async activateMatch(match: MatchResult): Promise<void> {
+    this.broadcastOnlineStats();
     if (!this.sessionCoordinator.isOwner(match)) {
       throw new Error('Only the match owner may persist a new chat session.');
     }
@@ -780,6 +831,7 @@ export class ChatGateway {
     if (this.socketToUser.get(socket.id) !== userId) return;
     this.socketToUser.delete(socket.id);
     await this.matchingEngine.dequeue(userId);
+    this.broadcastOnlineStats();
     const session = await this.sessionCoordinator.markDisconnected(userId, socket.id);
     if (!session) return;
 
