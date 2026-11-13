@@ -11,6 +11,7 @@ import { parseSessionMediaPayload, type SessionMediaMeta } from '../media/mediaP
 import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionMedia.js';
 import { useSmartAutoScroll } from './useSmartAutoScroll.js';
 import { triggerPushNotification, requestNotificationPermission } from '../notifications/pushNotification.js';
+import { triggerHaptic } from '../mobile/haptic.js';
 
 type MediaMessage = SessionMediaMeta;
 
@@ -184,6 +185,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
       setSessionId(result.sessionId);
       setPartner(result.partner);
       setChatState('CHATTING');
+      triggerHaptic('success');
 
       void triggerPushNotification({
         type: 'MATCH',
@@ -197,6 +199,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
       if (!sessionIdRef.current) setChatState('IDLE');
     });
     socket.on(SocketEvents.MESSAGE_RECEIVE, (message: { id: string; content: string; type?: string; isAdultContent?: boolean }) => {
+      triggerHaptic('light');
       const mediaType = message.type === 'IMAGE' || message.type === 'AUDIO' || message.type === 'VIDEO'
         ? message.type
         : null;
@@ -610,7 +613,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
             >
               {messages.map((message) => (
                 <div key={message.id} className={`flex flex-col ${message.sender === 'me' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-xs ${message.sender === 'me' ? 'bg-blue-600 text-white shadow-sm' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
+                  <div className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-xs message-selectable ${message.sender === 'me' ? 'bg-blue-600 text-white shadow-sm' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
                     {message.media ? (
                       <MediaAttachmentPreview
                         title={message.text}
@@ -719,6 +722,11 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
                   placeholder="Nhập tin nhắn..."
                   value={inputMessage}
                   onChange={(event) => setInputMessage(event.target.value)}
+                  onFocus={() => {
+                    setTimeout(() => {
+                      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    }, 280);
+                  }}
                   className="flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs outline-none focus:border-blue-500"
                 />
               )}

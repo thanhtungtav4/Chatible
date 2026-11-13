@@ -7,6 +7,7 @@ import { ChatEngine } from './features/chat/ChatEngine.js';
 import { syncStealthState, triggerPushNotification } from './features/notifications/pushNotification.js';
 import { usePwaInstall } from './features/pwa/usePwaInstall.js';
 import { PwaInstallModal } from './features/pwa/PwaInstallModal.js';
+import { triggerHaptic } from './features/mobile/haptic.js';
 
 const FriendsView = lazy(() => import('./features/friends/FriendsView.js').then((m) => ({ default: m.FriendsView })));
 const GroupsView = lazy(() => import('./features/groups/GroupsView.js').then((m) => ({ default: m.GroupsView })));
@@ -192,14 +193,20 @@ export default function App() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#e2e8f0] p-0 md:p-6">
       <div className="relative flex h-[100dvh] w-full max-w-[420px] flex-col overflow-hidden bg-white shadow-2xl md:h-[860px] md:rounded-[48px] md:border-[10px] md:border-[#1e293b]">
         <div aria-hidden="true" className="pointer-events-none hidden md:block absolute left-1/2 top-3 z-50 h-7 w-28 -translate-x-1/2 rounded-full bg-black" />
-        <header className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3 md:px-5 md:pt-7">
+        <header
+          className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3 md:px-5 md:pt-7"
+          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))' }}
+        >
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 font-bold text-white shadow-md">C</div>
             <span className="font-extrabold tracking-tight text-slate-900">Chatible</span>
             {!pwa.isStandalone && (
               <button
                 type="button"
-                onClick={() => void pwa.triggerInstall()}
+                onClick={() => {
+                  triggerHaptic('light');
+                  void pwa.triggerInstall();
+                }}
                 className="flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200/60 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition shadow-xs"
                 title="Cài đặt ứng dụng Chatible (Shortapp)"
               >
@@ -340,20 +347,27 @@ export default function App() {
           )}
         </main>
 
-        <nav className="flex h-16 shrink-0 items-stretch justify-around border-t border-slate-100 bg-white/90 px-1 backdrop-blur-md" aria-label="Điều hướng chính">
-          <button type="button" onClick={() => setActiveTab('chat')} aria-current={activeTab === 'chat' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold ${activeTab === 'chat' ? 'text-blue-600' : 'text-slate-400'}`}>
+        <nav
+          className="flex shrink-0 items-stretch justify-around border-t border-slate-100 bg-white/95 px-1 backdrop-blur-md"
+          style={{
+            paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom, 0.375rem))',
+            minHeight: 'calc(3.75rem + env(safe-area-inset-bottom, 0px))',
+          }}
+          aria-label="Điều hướng chính"
+        >
+          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('chat'); }} aria-current={activeTab === 'chat' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'chat' ? 'text-blue-600' : 'text-slate-400'}`}>
             <MessageSquare size={18} aria-hidden="true" /><span>Chat</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('friends')} aria-current={activeTab === 'friends' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold ${activeTab === 'friends' ? 'text-blue-600' : 'text-slate-400'}`}>
+          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('friends'); }} aria-current={activeTab === 'friends' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'friends' ? 'text-blue-600' : 'text-slate-400'}`}>
             <UsersRound size={18} aria-hidden="true" /><span>Bạn bè</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('groups')} aria-current={activeTab === 'groups' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold ${activeTab === 'groups' ? 'text-blue-600' : 'text-slate-400'}`}>
+          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('groups'); }} aria-current={activeTab === 'groups' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'groups' ? 'text-blue-600' : 'text-slate-400'}`}>
             <MessagesSquare size={18} aria-hidden="true" /><span>Nhóm</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('recent')} aria-current={activeTab === 'recent' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold ${activeTab === 'recent' ? 'text-blue-600' : 'text-slate-400'}`}>
+          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('recent'); }} aria-current={activeTab === 'recent' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'recent' ? 'text-blue-600' : 'text-slate-400'}`}>
             <Clock3 size={18} aria-hidden="true" /><span>Gần đây</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('profile')} aria-current={activeTab === 'profile' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold ${activeTab === 'profile' ? 'text-blue-600' : 'text-slate-400'}`}>
+          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('profile'); }} aria-current={activeTab === 'profile' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'profile' ? 'text-blue-600' : 'text-slate-400'}`}>
             <User size={18} aria-hidden="true" /><span>Hồ sơ</span>
           </button>
         </nav>

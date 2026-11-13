@@ -396,7 +396,7 @@ export function GroupsView({ currentUserId }: { currentUserId: string }) {
                       </span>
                     </div>
                     <div
-                      className={`max-w-[82%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${
+                      className={`max-w-[82%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed message-selectable ${
                         msg.isSelf
                           ? 'bg-blue-600 text-white'
                           : msg.isAdmin
@@ -447,6 +447,11 @@ export function GroupsView({ currentUserId }: { currentUserId: string }) {
                   type="text"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
+                  onFocus={() => {
+                    setTimeout(() => {
+                      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    }, 280);
+                  }}
                   placeholder="Nhắn tin vào nhóm…"
                   maxLength={4000}
                   className="flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-900 outline-none focus:border-blue-500 focus:bg-white"
