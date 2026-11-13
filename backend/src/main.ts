@@ -87,12 +87,13 @@ async function bootstrap() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        scriptSrc: ["'self'", 'https://accounts.google.com/gsi/client'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com/gsi/style'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-        imgSrc: ["'self'", 'blob:', 'data:'],
+        imgSrc: ["'self'", 'blob:', 'data:', 'https://*.googleusercontent.com'],
         mediaSrc: ["'self'", 'blob:'],
-        connectSrc: ["'self'", ...config.corsOrigins],
+        connectSrc: ["'self'", 'https://accounts.google.com/gsi/', ...config.corsOrigins],
+        frameSrc: ["'self'", 'https://accounts.google.com/gsi/'],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
       },

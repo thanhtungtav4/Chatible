@@ -1,7 +1,26 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Gender, AuthResponse } from '@chatible/shared';
 import { Lock, Mail, User, Calendar, ShieldCheck, AlertCircle, X, ArrowLeft, KeyRound, CheckCircle2 } from 'lucide-react';
 import { apiFetch } from '../../api.js';
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential?: string }) => void;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+          prompt: () => void;
+        };
+      };
+    };
+  }
+}
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -38,9 +57,11 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [googleIdToken, setGoogleIdToken] = useState<string | null>(null);
   const [authConfig, setAuthConfig] = useState<{
     googleAuthEnabled: boolean;
+    googleClientId?: string;
     registrationEnabled: boolean;
     emailVerificationRequired: boolean;
   } | null>(null);
+  const googleBtnContainerRef = useRef<HTMLDivElement>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,11 +72,13 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       .then(
         (data: {
           googleAuthEnabled?: boolean;
+          googleClientId?: string;
           registrationEnabled?: boolean;
           emailVerificationRequired?: boolean;
         }) => {
           setAuthConfig({
             googleAuthEnabled: data.googleAuthEnabled !== false,
+            googleClientId: data.googleClientId || '',
             registrationEnabled: data.registrationEnabled !== false,
             emailVerificationRequired: data.emailVerificationRequired === true,
           });
@@ -67,6 +90,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       .catch(() => {
         setAuthConfig({
           googleAuthEnabled: true,
+          googleClientId: '',
           registrationEnabled: true,
           emailVerificationRequired: false,
         });
@@ -182,19 +206,114 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     }
   };
 
-  const handleGoogleClick = async () => {
-    setError(null);
-    // In browser environment without external Google OAuth SDK script loaded,
-    // prompt user for simulated testing or prompt ID Token
-    const simulatedSub = 'google-user-' + Math.random().toString(36).substring(2, 9);
-    const mockEmail = `google.${simulatedSub}@gmail.com`;
+  const handleGoogleCredentialResponse = useCallback(
+    async (credential: string) => {
+      setError(null);
+      setIsLoading(true);
+      setGoogleIdToken(credential);
 
-    // Attempt direct Google auth or open onboarding for birthDate
-    setGoogleIdToken(simulatedSub);
-    if (!email) setEmail(mockEmail);
-    if (!nickname) setNickname('Google User');
-    setMode('GOOGLE_ONBOARD');
-  };
+      // Attempt to decode email and name from token payload for prefill
+      try {
+        const payloadBase64 = credential.split('.')[1];
+        if (payloadBase64) {
+          const payload = JSON.parse(atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/')));
+          if (payload.email) setEmail(payload.email);
+          if (payload.name) setNickname(payload.name);
+        }
+      } catch {
+        // ignore decode helper error
+      }
+
+      try {
+        // Attempt direct login with backend (if user already exists)
+        const res = await apiFetch('/api/v1/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: credential }),
+        });
+
+        const data = (await res.json()) as AuthResponse & { error?: string };
+
+        if (res.ok) {
+          onSuccess(data.profile);
+          onClose();
+          return;
+        }
+
+        // If user is new, backend requires birthDate (18+ verification)
+        if (data.error && data.error.includes('18+')) {
+          setMode('GOOGLE_ONBOARD');
+          return;
+        }
+
+        throw new Error(data.error || 'Xác thực Google thất bại.');
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Đăng nhập Google thất bại');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [onSuccess, onClose]
+  );
+
+  useEffect(() => {
+    if (!isOpen || !authConfig?.googleAuthEnabled || !authConfig?.googleClientId) return;
+    if (mode !== 'LOGIN' && mode !== 'REGISTER') return;
+
+    let isCancelled = false;
+
+    const initGoogleGsi = () => {
+      if (isCancelled || !window.google?.accounts?.id || !authConfig?.googleClientId) return;
+
+      try {
+        window.google.accounts.id.initialize({
+          client_id: authConfig.googleClientId,
+          callback: (response: { credential?: string }) => {
+            if (response?.credential) {
+              void handleGoogleCredentialResponse(response.credential);
+            }
+          },
+          cancel_on_tap_outside: true,
+        });
+
+        if (googleBtnContainerRef.current) {
+          googleBtnContainerRef.current.innerHTML = '';
+          window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: 'continue_with',
+            shape: 'pill',
+            width: 320,
+            locale: 'vi',
+          });
+        }
+      } catch (e) {
+        console.error('Google GSI initialization error:', e);
+      }
+    };
+
+    if (window.google?.accounts?.id) {
+      initGoogleGsi();
+    } else {
+      const existing = document.getElementById('google-gsi-client-script');
+      if (existing) {
+        existing.addEventListener('load', initGoogleGsi);
+      } else {
+        const script = document.createElement('script');
+        script.id = 'google-gsi-client-script';
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = initGoogleGsi;
+        document.head.appendChild(script);
+      }
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, mode, authConfig, handleGoogleCredentialResponse]);
 
   const handleGoogleOnboardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -208,12 +327,15 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       if (!policyAccepted) {
         throw new Error('Bạn cần đồng ý với chính sách 18+ và điều khoản sử dụng.');
       }
+      if (!googleIdToken) {
+        throw new Error('Không tìm thấy phiên xác thực Google. Vui lòng đăng nhập lại.');
+      }
 
       const response = await apiFetch('/api/v1/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          idToken: googleIdToken || 'simulated-token',
+          idToken: googleIdToken,
           nickname: nickname.trim() || 'Người dùng Google',
           gender,
           birthDate,
@@ -924,7 +1046,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                 </button>
 
                 {/* Google Sign-In Divider & Button (only if Google Auth is enabled by Admin) */}
-                {authConfig?.googleAuthEnabled !== false && (
+                {authConfig?.googleAuthEnabled && authConfig?.googleClientId && (
                   <>
                     <div className="relative my-2 flex items-center justify-center">
                       <div className="w-full border-t border-slate-200" />
@@ -933,31 +1055,9 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                       </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleGoogleClick}
-                      className="flex min-h-[44px] w-full items-center justify-center gap-2.5 rounded-full border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                        <path
-                          fill="#4285F4"
-                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                        />
-                        <path
-                          fill="#EA4335"
-                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                        />
-                      </svg>
-                      <span>Đăng nhập bằng Google</span>
-                    </button>
+                    <div className="flex min-h-[44px] w-full items-center justify-center">
+                      <div ref={googleBtnContainerRef} className="flex min-h-[44px] w-full justify-center" />
+                    </div>
                   </>
                 )}
               </form>
