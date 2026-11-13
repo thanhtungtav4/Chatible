@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { AuthResponse, TargetGender, UpdateProfileDto } from '@chatible/shared';
 import {
   AlertTriangle,
+  Bell,
   Check,
   ChevronDown,
   ChevronUp,
@@ -20,6 +21,13 @@ import {
   UserX,
 } from 'lucide-react';
 import { apiFetch } from '../../api.js';
+import {
+  setLocalStealthMode,
+  getNotificationPermission,
+  requestNotificationPermission,
+  triggerPushNotification,
+  isNotificationSupported,
+} from '../notifications/pushNotification.js';
 
 type UserProfile = AuthResponse['profile'];
 
@@ -76,6 +84,8 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
   const [stealthErrorMsg, setStealthErrorMsg] = useState<string | null>(null);
   const [stealthSuccessMsg, setStealthSuccessMsg] = useState<string | null>(null);
   const [isSavingStealth, setIsSavingStealth] = useState(false);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission>(() => getNotificationPermission());
+  const [testNotifFeedback, setTestNotifFeedback] = useState<string | null>(null);
 
   // Change Password State
   const [isPasswordOpen, setIsPasswordOpen] = useState(false);
@@ -137,7 +147,10 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
         return data;
       })
       .then((data) => {
-        if (isCurrent) setIsStealthEnabled(data.enabled === true);
+        if (isCurrent) {
+          setIsStealthEnabled(data.enabled === true);
+          setLocalStealthMode(data.enabled === true);
+        }
       })
       .catch((err) => {
         if (isCurrent) setStealthErrorMsg(err instanceof Error ? err.message : 'Không thể tải Kho riêng tư.');
@@ -317,6 +330,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
       const data = (await response.json().catch(() => ({}))) as { enabled?: boolean; error?: string };
       if (!response.ok) throw new Error(data.error || 'Không thể tắt Kho riêng tư.');
       setIsStealthEnabled(false);
+      setLocalStealthMode(false);
       setIsStealthSetupOpen(false);
       setStealthPin('');
       setStealthConfirmPin('');
@@ -360,6 +374,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
       const data = (await response.json().catch(() => ({}))) as { enabled?: boolean; error?: string };
       if (!response.ok) throw new Error(data.error || 'Không thể lưu mã PIN.');
       setIsStealthEnabled(data.enabled === true);
+      setLocalStealthMode(data.enabled === true);
       setIsStealthSetupOpen(false);
       setStealthPin('');
       setStealthConfirmPin('');
@@ -370,6 +385,40 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
     } finally {
       setIsSavingStealth(false);
     }
+  };
+
+  const handleRequestNotif = async () => {
+    const res = await requestNotificationPermission();
+    setNotifPerm(res);
+    if (res === 'granted') {
+      setTestNotifFeedback('Đã cấp quyền thông báo thành công!');
+      setTimeout(() => setTestNotifFeedback(null), 3000);
+    } else if (res === 'denied') {
+      setTestNotifFeedback('Trình duyệt đã từ chối quyền. Hãy cho phép trong cài đặt trình duyệt.');
+    }
+  };
+
+  const handleTestNotification = async () => {
+    if (notifPerm !== 'granted') {
+      const res = await requestNotificationPermission();
+      setNotifPerm(res);
+      if (res !== 'granted') {
+        setTestNotifFeedback('Vui lòng cho phép trình duyệt gửi thông báo trước.');
+        return;
+      }
+    }
+    await triggerPushNotification({
+      type: 'CHAT',
+      senderName: 'Bạn bè ẩn danh',
+      content: 'Chào bạn, đây là tin nhắn kiểm tra thông báo đẩy Chatible!',
+      force: true,
+    });
+    setTestNotifFeedback(
+      isStealthEnabled
+        ? 'Đã gửi thông báo ngụy trang ("Thông báo hệ thống - Bạn có 1 thông báo mới").'
+        : 'Đã gửi thông báo đầy đủ kèm trích đoạn tin nhắn.'
+    );
+    setTimeout(() => setTestNotifFeedback(null), 4000);
   };
 
   const handleResendEmailVerification = async () => {
@@ -987,7 +1036,71 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
         {stealthErrorMsg && <p className="mt-3 text-xs font-semibold text-rose-600">{stealthErrorMsg}</p>}
       </section>
 
-      {/* 8. Danger Zone: Delete Account */}
+      {/* 8. Push Notifications & Privacy */}
+      <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bell size={17} className="text-indigo-600" />
+            <div>
+              <h2 className="text-xs font-bold text-slate-800">Thông báo trình duyệt & Ẩn danh (Push Notification)</h2>
+              <p className="text-[11px] text-slate-500">Nhận báo tin khi có tin nhắn mới hoặc ghép đôi</p>
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+              notifPerm === 'granted'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : notifPerm === 'denied'
+                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                : 'bg-slate-100 text-slate-600 border border-slate-200'
+            }`}
+          >
+            {notifPerm === 'granted' ? '✓ Đã cấp quyền' : notifPerm === 'denied' ? 'Đã bị chặn' : 'Chưa bật'}
+          </span>
+        </div>
+
+        <div className="mt-3 space-y-2.5 border-t border-slate-100 pt-3">
+          <div className="rounded-xl bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-600 space-y-1.5 border border-slate-100">
+            <div className="flex items-start gap-1.5">
+              <span className="font-semibold text-slate-800">Trạng thái Ngụy trang: <span className={isStealthEnabled ? 'text-indigo-600' : 'text-slate-500'}>{isStealthEnabled ? 'Đang BẬT' : 'Đang TẮT'}</span></span>
+            </div>
+            {isStealthEnabled ? (
+              <p className="text-indigo-700">
+                🛡️ <strong>Bảo mật tối đa:</strong> Thông báo sẽ hiển thị trung tính <em>"Thông báo hệ thống - Bạn có 1 thông báo mới."</em> Hoàn toàn ẩn danh, không lộ tên người gửi, trích đoạn tin nhắn hay ngữ cảnh chat.
+              </p>
+            ) : (
+              <p className="text-slate-600">
+                💬 <strong>Hiển thị đầy đủ:</strong> Thông báo sẽ hiển thị tên đối phương/bạn bè và trích đoạn 1 phần tin nhắn mới để bạn xem nhanh mà không cần mở ngay ứng dụng.
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            {notifPerm !== 'granted' && (
+              <button
+                type="button"
+                onClick={() => void handleRequestNotif()}
+                className="flex-1 rounded-xl bg-indigo-600 py-2 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 transition"
+              >
+                Bật thông báo trên thiết bị
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleTestNotification()}
+              className="flex-1 rounded-xl border border-slate-200 bg-white py-2 px-3 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+            >
+              Thử thông báo ({isStealthEnabled ? 'Ngụy trang' : 'Đầy đủ'})
+            </button>
+          </div>
+
+          {testNotifFeedback && (
+            <p className="text-xs font-medium text-emerald-600">{testNotifFeedback}</p>
+          )}
+        </div>
+      </section>
+
+      {/* 9. Danger Zone: Delete Account */}
       <section className="rounded-2xl border border-rose-100 bg-rose-50/20 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div>

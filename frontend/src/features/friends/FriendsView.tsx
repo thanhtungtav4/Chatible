@@ -26,6 +26,7 @@ import { parseSessionMediaPayload, type SessionMediaMeta } from '../media/mediaP
 import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionMedia.js';
 import { useSmartAutoScroll } from '../chat/useSmartAutoScroll.js';
 import { mergeFriendMessages, type OrderedFriendMessage } from './friendMessageOrder.js';
+import { triggerPushNotification } from '../notifications/pushNotification.js';
 
 type Friend = {
   id: string;
@@ -124,11 +125,13 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [messageError, setMessageError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const selectedFriendIdRef = useRef<string | null>(null);
+  const friendsRef = useRef<Friend[]>([]);
   const messagesRef = useRef<FriendMessage[]>([]);
   const pendingScrollRestoreRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(null);
   const isLoadingOlderRef = useRef(false);
 
   selectedFriendIdRef.current = selectedFriendId;
+  friendsRef.current = friends;
   messagesRef.current = messages;
 
   const sendFriendMediaMessage = useCallback(
@@ -219,9 +222,26 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     });
     socket.on(SocketEvents.FRIEND_MESSAGE_RECEIVE, (incoming: FriendMessage) => {
       const activeFriend = selectedFriendIdRef.current;
-      if (!activeFriend) return;
-      if (incoming.senderId !== activeFriend && incoming.receiverId !== activeFriend) return;
-      setMessages((current) => mergeFriendMessages(current, [incoming]));
+      if (activeFriend && (incoming.senderId === activeFriend || incoming.receiverId === activeFriend)) {
+        setMessages((current) => mergeFriendMessages(current, [incoming]));
+      }
+
+      if (incoming.senderId !== currentUserId) {
+        let preview = incoming.content || '';
+        if (incoming.type === 'IMAGE') preview = '📷 Đã gửi một hình ảnh';
+        else if (incoming.type === 'AUDIO') preview = '🎵 Đã gửi một đoạn ghi âm';
+        else if (incoming.type === 'VIDEO') preview = '🎥 Đã gửi một video';
+
+        const senderFriend = friendsRef.current.find((f) => f.userId === incoming.senderId);
+        const senderName = senderFriend?.nickname || 'Bạn bè';
+
+        void triggerPushNotification({
+          type: 'FRIEND',
+          senderName,
+          content: preview,
+          tag: `friend-${incoming.senderId}`,
+        });
+      }
     });
     socket.on(SocketEvents.MEDIA_REVOKED, (payload: { mediaId?: string }) => {
       if (!payload?.mediaId) return;

@@ -4,6 +4,7 @@ import { SocketEvents } from '@chatible/shared';
 import { ArrowLeft, Ban, Globe, Lock, Megaphone, RefreshCw, Send, ShieldAlert, Users } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '../../api.js';
 import type { ReportReason } from '../safety/ReportModal.js';
+import { triggerPushNotification } from '../notifications/pushNotification.js';
 
 type RoomType = 'BROADCAST' | 'PUBLIC' | 'PRIVATE_PASSCODE';
 
@@ -112,6 +113,26 @@ export function GroupsView({ currentUserId }: { currentUserId: string }) {
           },
         ];
       });
+
+      const isSelf = incoming.isSelf ?? incoming.senderId === currentUserId;
+      if (!isSelf) {
+        const senderName = incoming.senderNickname || 'Thành viên';
+        let preview = incoming.content || '';
+        if (incoming.messageType === 'IMAGE') preview = '📷 Đã gửi một hình ảnh';
+        else if (incoming.messageType === 'AUDIO') preview = '🎵 Đã gửi một đoạn ghi âm';
+        else if (incoming.messageType === 'VIDEO') preview = '🎥 Đã gửi một video';
+
+        const room = rooms.find((r) => r.id === incoming.roomId);
+        const roomName = room ? room.name : 'Nhóm cộng đồng';
+
+        void triggerPushNotification({
+          type: 'GROUP',
+          title: roomName,
+          senderName,
+          content: preview,
+          tag: `group-${incoming.roomId}`,
+        });
+      }
     });
 
     return () => {

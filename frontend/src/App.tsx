@@ -4,6 +4,7 @@ import { Bell, CheckCheck, Clock3, MessageSquare, MessagesSquare, ShieldAlert, U
 import { apiFetch } from './api.js';
 import { AuthModal } from './features/auth/AuthModal.js';
 import { ChatEngine } from './features/chat/ChatEngine.js';
+import { syncStealthState, triggerPushNotification } from './features/notifications/pushNotification.js';
 
 const FriendsView = lazy(() => import('./features/friends/FriendsView.js').then((m) => ({ default: m.FriendsView })));
 const GroupsView = lazy(() => import('./features/groups/GroupsView.js').then((m) => ({ default: m.GroupsView })));
@@ -32,6 +33,7 @@ export default function App() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifDialogRef = useRef<HTMLDialogElement>(null);
   const notifHeadingId = useId();
+  const knownNotifIdsRef = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -68,6 +70,23 @@ export default function App() {
       if (Array.isArray(data.notifications)) {
         setNotifications(data.notifications);
         setUnreadNotifications(data.unreadCount ?? 0);
+
+        // Notify for new unread system notifications (avoid alerting initial existing backlog)
+        if (knownNotifIdsRef.current === null) {
+          knownNotifIdsRef.current = new Set(data.notifications.map((n) => n.id));
+        } else {
+          for (const item of data.notifications) {
+            if (!item.isRead && !knownNotifIdsRef.current.has(item.id)) {
+              knownNotifIdsRef.current.add(item.id);
+              void triggerPushNotification({
+                type: 'SYSTEM',
+                title: item.title,
+                content: item.content,
+                tag: `system-${item.id}`,
+              });
+            }
+          }
+        }
       }
     } catch {
       // ignore non-critical notification fetch errors
@@ -89,7 +108,10 @@ export default function App() {
         if (!isCurrent) return;
         const resolved = profile && typeof profile.id === 'string' ? profile : null;
         setUserProfile(resolved);
-        if (resolved) void loadNotifications();
+        if (resolved) {
+          void syncStealthState();
+          void loadNotifications();
+        }
       })
       .catch(() => {
         if (isCurrent) setUserProfile(null);
@@ -108,6 +130,7 @@ export default function App() {
   const handleAuthSuccess = (profile: UserProfile) => {
     setUserProfile(profile);
     setActiveTab('chat');
+    void syncStealthState();
     void loadNotifications();
   };
 

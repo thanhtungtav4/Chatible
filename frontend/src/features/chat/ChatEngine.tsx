@@ -10,6 +10,7 @@ import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
 import { parseSessionMediaPayload, type SessionMediaMeta } from '../media/mediaPreviewLifecycle.js';
 import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionMedia.js';
 import { useSmartAutoScroll } from './useSmartAutoScroll.js';
+import { triggerPushNotification, requestNotificationPermission } from '../notifications/pushNotification.js';
 
 type MediaMessage = SessionMediaMeta;
 
@@ -75,6 +76,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
   });
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const partnerRef = useRef<UserPublicProfile | null>(null);
   const shouldResumeRef = useRef(false);
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
@@ -177,10 +179,18 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
 
     socket.on(SocketEvents.MATCHING_FOUND, (result: { sessionId: string; partner: UserPublicProfile }) => {
       sessionIdRef.current = result.sessionId;
+      partnerRef.current = result.partner;
       shouldResumeRef.current = false;
       setSessionId(result.sessionId);
       setPartner(result.partner);
       setChatState('CHATTING');
+
+      void triggerPushNotification({
+        type: 'MATCH',
+        senderName: result.partner.nickname,
+        content: `Đã kết nối với ${result.partner.nickname} (${result.partner.age}t).`,
+        tag: 'chatible-match',
+      });
     });
     socket.on(SocketEvents.MATCHING_ERROR, (result: { error?: string }) => {
       setConnectionError(result.error || 'Ghép đôi thất bại.');
@@ -200,6 +210,19 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
         media,
         time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       }]);
+
+      const partnerName = partnerRef.current?.nickname || 'Người lạ';
+      let previewText = message.content;
+      if (message.type === 'IMAGE') previewText = '📷 Đã gửi một hình ảnh';
+      else if (message.type === 'AUDIO') previewText = '🎵 Đã gửi một đoạn ghi âm';
+      else if (message.type === 'VIDEO') previewText = '🎥 Đã gửi một video';
+
+      void triggerPushNotification({
+        type: 'CHAT',
+        senderName: partnerName,
+        content: previewText,
+        tag: `chat-${sessionIdRef.current || 'active'}`,
+      });
     });
     socket.on(SocketEvents.MEDIA_CONSENT_UPDATE, (payload: { sessionId?: string; enabled?: boolean }) => {
       if (!payload?.sessionId || payload.sessionId === sessionIdRef.current) {
@@ -268,6 +291,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
   }, [chatState]);
 
   const handleStartMatching = () => {
+    void requestNotificationPermission();
     const socket = socketRef.current;
     if (!socket?.connected) {
       setConnectionError('Chưa kết nối máy chủ. Kiểm tra đăng nhập rồi thử lại.');
@@ -279,6 +303,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     sessionMedia.clearAllMediaPreviews();
     setMessages([]);
     setPartner(null);
+    partnerRef.current = null;
     setSessionId(null);
     sessionIdRef.current = null;
     shouldResumeRef.current = false;
