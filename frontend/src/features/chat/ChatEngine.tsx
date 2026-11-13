@@ -60,6 +60,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isFriendRequested, setIsFriendRequested] = useState(false);
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const ageSliderId = useId();
@@ -303,6 +304,7 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     setConnectionError(null);
     setActionError(null);
     setIsFriendRequested(false);
+    setIsFilterExpanded(false);
     sessionMedia.clearAllMediaPreviews();
     setMessages([]);
     setPartner(null);
@@ -319,7 +321,28 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
     });
   };
 
-  const handleExpandFilter = () => socketRef.current?.emit(SocketEvents.MATCHING_EXPAND_ACCEPT);
+  const handleExpandFilter = useCallback(() => {
+    triggerHaptic('selection');
+    setIsFilterExpanded(true);
+    setTargetGender('ALL');
+    setAgeMax(80);
+    socketRef.current?.emit(
+      SocketEvents.MATCHING_EXPAND_ACCEPT,
+      undefined,
+      (ack?: { success: boolean; expanded: boolean }) => {
+        if (ack?.success) {
+          triggerHaptic('medium');
+        }
+      }
+    );
+  }, []);
+
+  useEffect(() => {
+    if (chatState !== 'WAITING') return;
+    if (secondsWaiting >= 8 && !isFilterExpanded) {
+      handleExpandFilter();
+    }
+  }, [chatState, secondsWaiting, isFilterExpanded, handleExpandFilter]);
 
   const handleCancelMatching = () => {
     socketRef.current?.emit(SocketEvents.MATCHING_CANCEL);
@@ -518,17 +541,36 @@ export function ChatEngine({ currentUser, onOpenReport }: ChatEngineProps) {
               ? 'Nam'
               : 'Khác'}{' '}
             • 18 – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
+            {isFilterExpanded && <span className="ml-1 font-semibold text-emerald-600">(Đã mở rộng)</span>}
           </p>
-          {secondsWaiting >= 6 && (
-            <div className="mt-4 flex flex-col items-center rounded-2xl border border-blue-100 bg-blue-50/80 p-3.5 text-xs">
-              <span className="font-semibold text-blue-900">Hàng chờ đang ít người phù hợp?</span>
-              <button
-                onClick={handleExpandFilter}
-                className="mt-2 rounded-full bg-blue-600 px-4 py-1.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-blue-700"
-              >
-                Mở rộng bộ lọc tìm kiếm
-              </button>
+
+          {isFilterExpanded ? (
+            <div className="mt-4 flex flex-col items-center rounded-2xl border border-emerald-200 bg-emerald-50/90 p-3 text-xs shadow-sm animate-in fade-in duration-200 max-w-[280px]">
+              <span className="font-bold text-emerald-800 flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                </span>
+                <span>Đã mở rộng bộ lọc tối đa</span>
+              </span>
+              <p className="mt-1 text-center text-[11px] text-emerald-700 font-medium">
+                Đang quét ghép đôi nhanh nhất với mọi đối tượng trực tuyến (18–80 tuổi)
+              </p>
             </div>
+          ) : (
+            secondsWaiting >= 3 && (
+              <div className="mt-4 flex flex-col items-center rounded-2xl border border-blue-100 bg-blue-50/80 p-3.5 text-xs shadow-sm">
+                <span className="font-semibold text-blue-900">Hàng chờ đang ít người phù hợp?</span>
+                <button
+                  type="button"
+                  onClick={handleExpandFilter}
+                  className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-600 px-4 py-1.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-blue-700 active:scale-95"
+                >
+                  <Sparkles size={13} />
+                  <span>Mở rộng bộ lọc tìm kiếm ngay</span>
+                </button>
+              </div>
+            )
           )}
           <button
             onClick={handleCancelMatching}

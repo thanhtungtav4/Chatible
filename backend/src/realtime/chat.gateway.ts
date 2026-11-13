@@ -67,6 +67,7 @@ export class ChatGateway {
   private pendingGroupEmits = new Set<Promise<void>>();
   private failedGroupDeliveries: Array<{ roomId: string; payload: unknown; attempts: number }> = [];
   private groupRetryTimer?: NodeJS.Timeout;
+  private matchingSweepTimer?: NodeJS.Timeout;
   private isClosing = false;
   private groupDeliveryMetrics = {
     delivered: 0,
@@ -195,6 +196,10 @@ export class ChatGateway {
       clearInterval(this.groupRetryTimer);
       this.groupRetryTimer = undefined;
     }
+    if (this.matchingSweepTimer) {
+      clearInterval(this.matchingSweepTimer);
+      this.matchingSweepTimer = undefined;
+    }
     this.failedGroupDeliveries = [];
     await Promise.all([...this.pendingDisconnects, ...this.pendingGroupEmits]);
     for (const session of this.activeSessions.values()) {
@@ -217,6 +222,21 @@ export class ChatGateway {
   ) {}
 
   async registerHandlers(): Promise<void> {
+    if (!this.matchingSweepTimer) {
+      this.matchingSweepTimer = setInterval(async () => {
+        if (this.isClosing) return;
+        try {
+          const matches = await this.matchingEngine.sweepMatches();
+          for (const match of matches) {
+            await this.activateMatch(match);
+          }
+        } catch {
+          // ignore non-fatal background matching errors
+        }
+      }, 2500);
+      this.matchingSweepTimer.unref();
+    }
+
     await this.sessionCoordinator.subscribe(async (notification) => {
       try {
         await this.handleSessionNotification(notification);
@@ -325,26 +345,33 @@ export class ChatGateway {
         if (userId) await this.matchingEngine.dequeue(userId);
       });
 
-      socket.on(SocketEvents.MATCHING_EXPAND_ACCEPT, async () => {
+      socket.on(SocketEvents.MATCHING_EXPAND_ACCEPT, async (_payload?: unknown, ack?: (res: { success: boolean; expanded: boolean }) => void) => {
         await userRoomReady;
         const userId = this.socketToUser.get(socket.id);
-        if (!userId) return;
+        if (!userId) {
+          ack?.({ success: false, expanded: false });
+          return;
+        }
         if (await this.isEmailVerificationBlocked(userId)) {
           socket.emit(SocketEvents.MATCHING_ERROR, {
             error: 'Tài khoản cần xác minh email trong phần Hồ sơ trước khi bắt đầu tìm bạn.',
           });
+          ack?.({ success: false, expanded: false });
           return;
         }
         if (await this.hasLiveSession(userId)) {
           socket.emit(SocketEvents.MATCHING_ERROR, { error: 'Kết thúc phiên chat hiện tại trước khi ghép đôi lại.' });
+          ack?.({ success: false, expanded: false });
           return;
         }
         try {
           const match = await this.matchingEngine.expandFilter(userId);
+          ack?.({ success: true, expanded: true });
           if (match) await this.activateMatch(match);
         } catch (err: unknown) {
           console.error('[Matching] Could not expand match filters:', err);
           socket.emit(SocketEvents.MATCHING_ERROR, { error: 'Không thể hoàn tất ghép đôi. Vui lòng thử lại.' });
+          ack?.({ success: false, expanded: false });
         }
       });
 

@@ -124,13 +124,47 @@ export class MatchingEngine {
       const user = this.parseUser(encoded);
       user.allowExpansion = true;
       user.ageMin = Math.max(18, user.ageMin - 5);
-      user.ageMax = Math.min(80, user.ageMax + 5);
+      user.ageMax = Math.min(80, Math.max(user.ageMax + 5, 50));
+      user.lastPartnerId = undefined; // Relax previous partner restriction
       await this.redis.hset(this.queueKey, user.userId, JSON.stringify(user));
 
       const match = await this.findMatch(user);
       if (!match) return null;
       await this.removeUsersFromQueueAndIndex([user, match]);
       return this.createMatch(user, match);
+    });
+  }
+
+  /**
+   * Sweeps the queue to find and activate any compatible pairs that may now match
+   * (e.g. after time-based lastPartnerId relaxation or filter expansions).
+   */
+  async sweepMatches(limit = 10): Promise<MatchResult[]> {
+    return this.withQueueLock(async () => {
+      const results: MatchResult[] = [];
+      const userIds = await this.redis.hkeys(this.queueKey);
+      if (userIds.length < 2) return results;
+
+      const orderedIds = await this.orderCandidateIdsByFifo(userIds);
+      const consumedIds = new Set<string>();
+
+      for (const id of orderedIds) {
+        if (consumedIds.has(id)) continue;
+        if (results.length >= limit) break;
+
+        const raw = await this.redis.hget(this.queueKey, id);
+        if (!raw) continue;
+        const candidateA = this.parseUser(raw);
+
+        const match = await this.findMatch(candidateA);
+        if (match && !consumedIds.has(match.userId)) {
+          consumedIds.add(candidateA.userId);
+          consumedIds.add(match.userId);
+          await this.removeUsersFromQueueAndIndex([candidateA, match]);
+          results.push(this.createMatch(candidateA, match));
+        }
+      }
+      return results;
     });
   }
 
@@ -201,8 +235,11 @@ export class MatchingEngine {
   }
 
   private compatibleBucketKeysFor(candidateA: QueuedUser): string[] {
-    const acceptedGenders = candidateA.targetGender === 'ALL' ? ALL_GENDERS : [candidateA.targetGender];
-    const reciprocalTargets: readonly TargetGender[] = ['ALL', candidateA.gender];
+    const acceptedGenders =
+      candidateA.allowExpansion || candidateA.targetGender === 'ALL' ? ALL_GENDERS : [candidateA.targetGender];
+    const reciprocalTargets: readonly TargetGender[] = candidateA.allowExpansion
+      ? ['ALL', candidateA.gender, 'MALE', 'FEMALE', 'OTHER']
+      : ['ALL', candidateA.gender];
     const keys: string[] = [];
     for (const candidateGender of acceptedGenders) {
       for (const candidateTarget of reciprocalTargets) {
@@ -263,18 +300,25 @@ export class MatchingEngine {
   private async findMatch(candidateA: QueuedUser): Promise<QueuedUser | null> {
     const bucketKeys = this.compatibleBucketKeysFor(candidateA);
     const bucketPipeline = this.redis.pipeline();
+    const queryAgeMin = candidateA.allowExpansion ? 18 : candidateA.ageMin;
+    const queryAgeMax = candidateA.allowExpansion ? 99 : candidateA.ageMax;
     for (const bucketKey of bucketKeys) {
-      bucketPipeline.zrangebyscore(bucketKey, candidateA.ageMin, candidateA.ageMax);
+      bucketPipeline.zrangebyscore(bucketKey, queryAgeMin, queryAgeMax);
     }
     const bucketResults = await bucketPipeline.exec();
     const candidateIdSet = new Set<string>();
+    const now = Date.now();
+    const candidateAWaitSec = (now - candidateA.enqueuedAt) / 1000;
+
     if (bucketResults) {
       for (const [err, ids] of bucketResults) {
         if (err) throw err;
         if (!Array.isArray(ids)) continue;
         for (const id of ids) {
           if (typeof id !== 'string') continue;
-          if (id === candidateA.userId || id === candidateA.lastPartnerId) continue;
+          if (id === candidateA.userId) continue;
+          const enforceLastPartner = !candidateA.allowExpansion && candidateAWaitSec < 5;
+          if (enforceLastPartner && id === candidateA.lastPartnerId) continue;
           candidateIdSet.add(id);
         }
       }
@@ -292,14 +336,28 @@ export class MatchingEngine {
         if (!encoded) continue;
         const candidateB = this.parseUser(encoded);
         if (candidateA.userId === candidateB.userId) continue;
-        if (candidateA.lastPartnerId === candidateB.userId || candidateB.lastPartnerId === candidateA.userId) continue;
 
-        const aAcceptsBGender = candidateA.targetGender === 'ALL' || candidateA.targetGender === candidateB.gender;
-        const bAcceptsAGender = candidateB.targetGender === 'ALL' || candidateB.targetGender === candidateA.gender;
+        const candidateBWaitSec = (now - candidateB.enqueuedAt) / 1000;
+        const enforceLastPartner =
+          !candidateA.allowExpansion &&
+          !candidateB.allowExpansion &&
+          candidateAWaitSec < 5 &&
+          candidateBWaitSec < 5;
+
+        if (enforceLastPartner && (candidateA.lastPartnerId === candidateB.userId || candidateB.lastPartnerId === candidateA.userId)) {
+          continue;
+        }
+
+        const aAcceptsBGender =
+          candidateA.allowExpansion || candidateA.targetGender === 'ALL' || candidateA.targetGender === candidateB.gender;
+        const bAcceptsAGender =
+          candidateB.allowExpansion || candidateB.targetGender === 'ALL' || candidateB.targetGender === candidateA.gender;
         if (!aAcceptsBGender || !bAcceptsAGender) continue;
 
-        const aAcceptsBAge = candidateB.age >= candidateA.ageMin && candidateB.age <= candidateA.ageMax;
-        const bAcceptsAAge = candidateA.age >= candidateB.ageMin && candidateA.age <= candidateB.ageMax;
+        const aAcceptsBAge =
+          candidateA.allowExpansion || (candidateB.age >= candidateA.ageMin && candidateB.age <= candidateA.ageMax);
+        const bAcceptsAAge =
+          candidateB.allowExpansion || (candidateA.age >= candidateB.ageMin && candidateA.age <= candidateB.ageMax);
         if (!aAcceptsBAge || !bAcceptsAAge) continue;
 
         if (this.isBlockedFn && (await this.isBlockedFn(candidateA.userId, candidateB.userId))) continue;

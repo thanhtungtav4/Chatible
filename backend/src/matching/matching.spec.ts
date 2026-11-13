@@ -328,4 +328,49 @@ describe('Atomic two-way matching queue', () => {
     const match = await engine.enqueue(seeker);
     expect(match?.userB.userId).toBe('early-waiter');
   });
+
+  it('allows immediate repeat match when either user expands filters', async () => {
+    const engine = newTestEngine();
+    const userA = makeUser({ userId: 'repeat-a', lastPartnerId: 'repeat-b' });
+    const userB = makeUser({
+      userId: 'repeat-b',
+      socketId: 'socket-repeat-b',
+      gender: 'FEMALE',
+      targetGender: 'ALL',
+      lastPartnerId: 'repeat-a',
+    });
+
+    // Initially rejected due to lastPartnerId
+    expect(await engine.enqueue(userA)).toBeNull();
+    expect(await engine.enqueue(userB)).toBeNull();
+    expect(engine.getQueueSize()).toBe(2);
+
+    // When userA expands filters, lastPartnerId is relaxed and they match immediately!
+    const match = await engine.expandFilter('repeat-a');
+    expect(match).not.toBeNull();
+    expect(match?.userA.userId).toBe('repeat-a');
+    expect(match?.userB.userId).toBe('repeat-b');
+    expect(engine.getQueueSize()).toBe(0);
+  });
+
+  it('sweeps and matches waiting users automatically after lastPartner cooldown', async () => {
+    const engine = newTestEngine();
+    const pastTime = Date.now() - 6000; // 6 seconds ago
+    const userA = makeUser({ userId: 'cooldown-a', lastPartnerId: 'cooldown-b', enqueuedAt: pastTime });
+    const userB = makeUser({
+      userId: 'cooldown-b',
+      socketId: 'socket-cooldown-b',
+      gender: 'FEMALE',
+      targetGender: 'ALL',
+      lastPartnerId: 'cooldown-a',
+      enqueuedAt: pastTime,
+    });
+
+    await engine.restoreUsers([userA, userB]);
+    expect(engine.getQueueSize()).toBe(2);
+
+    const sweptMatches = await engine.sweepMatches();
+    expect(sweptMatches).toHaveLength(1);
+    expect(engine.getQueueSize()).toBe(0);
+  });
 });
