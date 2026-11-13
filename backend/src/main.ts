@@ -99,7 +99,8 @@ async function bootstrap() {
       },
     },
     frameguard: { action: 'deny' },
-    referrerPolicy: { policy: 'no-referrer' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   });
 
   await app.register(cors, {

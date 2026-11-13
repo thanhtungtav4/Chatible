@@ -274,6 +274,8 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             }
           },
           cancel_on_tap_outside: true,
+          ux_mode: 'popup',
+          auto_select: false,
         });
 
         if (googleBtnContainerRef.current) {

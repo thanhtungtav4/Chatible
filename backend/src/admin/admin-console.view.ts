@@ -522,6 +522,8 @@ export function renderAdminDashboardHtml(nonce: string): string {
                   if (window.google?.accounts?.id) {
                     window.google.accounts.id.initialize({
                       client_id: statusData.googleClientId,
+                      ux_mode: 'popup',
+                      auto_select: false,
                       callback: async (resp) => {
                         errEl.style.display = 'none';
                         try {

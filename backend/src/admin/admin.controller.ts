@@ -704,8 +704,10 @@ export class AdminController {
       const nonce = crypto.randomBytes(16).toString('base64');
       reply.header(
         'Content-Security-Policy',
-        `default-src 'self'; script-src 'self' 'nonce-${nonce}' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' https://fonts.gstatic.com; img-src 'self' blob: data: https://lh3.googleusercontent.com; media-src 'self' blob:; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; object-src 'none'; frame-ancestors 'none'`
+        `default-src 'self'; script-src 'self' 'nonce-${nonce}' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' https://fonts.gstatic.com; img-src 'self' blob: data: https://lh3.googleusercontent.com https://*.googleusercontent.com; media-src 'self' blob:; connect-src 'self' https://accounts.google.com/gsi/; frame-src 'self' https://accounts.google.com/gsi/; object-src 'none'; frame-ancestors 'none'`
       );
+      reply.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+      reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
       reply.type('text/html');
       return reply.send(renderAdminDashboardHtml(nonce));
     });
