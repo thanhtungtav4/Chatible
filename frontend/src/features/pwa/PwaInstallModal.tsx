@@ -28,8 +28,8 @@ export function PwaInstallModal({
       >
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
-              <img src="/favicon.svg" alt="Chatible" className="h-7 w-7" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-500/20 overflow-hidden">
+              <img src="/icon-192.png" alt="Chatible" className="h-full w-full object-cover" />
             </div>
             <div>
               <h3 id="pwa-install-title" className="text-base font-bold text-slate-900 flex items-center gap-1.5">

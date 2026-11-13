@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AuthResponse, UserNotificationDto } from '@chatible/shared';
-import { Bell, CheckCheck, Clock3, MessageSquare, MessagesSquare, ShieldAlert, Smartphone, User, UsersRound, X } from 'lucide-react';
+import { Bell, CheckCheck, Clock3, Download, MessageSquare, MessagesSquare, ShieldAlert, Smartphone, User, UsersRound, X } from 'lucide-react';
 import { apiFetch } from './api.js';
 import { AuthModal } from './features/auth/AuthModal.js';
 import { ChatEngine } from './features/chat/ChatEngine.js';
@@ -198,25 +198,27 @@ export default function App() {
           style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))' }}
         >
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 font-bold text-white shadow-md">C</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 font-bold text-white shadow-md overflow-hidden">
+              <img src="/favicon.svg" alt="Chatible" className="h-full w-full object-cover" />
+            </div>
             <span className="font-extrabold tracking-tight text-slate-900">Chatible</span>
-            {!pwa.isStandalone && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  void pwa.triggerInstall();
-                }}
-                className="flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200/60 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition shadow-xs"
-                title="Cài đặt ứng dụng Chatible (Shortapp)"
-              >
-                <Smartphone size={12} className="text-blue-600 shrink-0" />
-                <span className="hidden xs:inline">Shortapp</span>
-              </button>
-            )}
           </div>
           {userProfile && isAuthenticated ? (
             <div className="flex items-center gap-2">
+              {!pwa.isStandalone && (
+                <button
+                  type="button"
+                  aria-label="Cài đặt Shortapp"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    void pwa.triggerInstall();
+                  }}
+                  title="Cài đặt Chatible ra màn hình chính (Shortapp)"
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition active:scale-95"
+                >
+                  <Download size={18} aria-hidden="true" />
+                </button>
+              )}
               <button
                 type="button"
                 aria-label="Thông báo an toàn"
@@ -242,13 +244,29 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setIsAuthOpen(true)}
-              className="inline-flex min-h-[44px] items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white"
-            >
-              Đăng nhập
-            </button>
+            <div className="flex items-center gap-2">
+              {!pwa.isStandalone && (
+                <button
+                  type="button"
+                  aria-label="Cài đặt Shortapp"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    void pwa.triggerInstall();
+                  }}
+                  title="Cài đặt Chatible ra màn hình chính (Shortapp)"
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition active:scale-95"
+                >
+                  <Download size={18} aria-hidden="true" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsAuthOpen(true)}
+                className="inline-flex min-h-[44px] items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white"
+              >
+                Đăng nhập
+              </button>
+            </div>
           )}
         </header>
 

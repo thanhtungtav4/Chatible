@@ -1,7 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title>Chatible</title>
-  <rect width="64" height="64" rx="18" fill="#2563eb"/>
-  <path d="M17 20.5A8.5 8.5 0 0 1 25.5 12h13A8.5 8.5 0 0 1 47 20.5v11a8.5 8.5 0 0 1-8.5 8.5H30l-8.7 7v-7.4A8.5 8.5 0 0 1 17 31.5z" fill="#fff"/>
-  <circle cx="28" cy="26" r="2.5" fill="#2563eb"/>
-  <circle cx="36" cy="26" r="2.5" fill="#2563eb"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="50%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+    <linearGradient id="bubbleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F8FAFC" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.28" />
+    </filter>
+  </defs>
+
+  <!-- Full Bleed Background -->
+  <rect width="512" height="512" fill="url(#bgGrad)" />
+
+  <!-- Subtle Ambient Glow -->
+  <circle cx="256" cy="140" r="200" fill="#FFFFFF" opacity="0.12" />
+
+  <!-- Main Speech Bubble with Tail -->
+  <g filter="url(#shadow)">
+    <path d="M130,225 C130,155 186,105 258,105 C330,105 386,155 386,225 C386,295 330,345 258,345 C240,345 223,341 208,334 L152,366 L164,316 C143,293 130,261 130,225 Z" fill="url(#bubbleGrad)" />
+  </g>
+
+  <!-- 3 Modern Message Dots -->
+  <circle cx="210" cy="225" r="17" fill="#2563EB" />
+  <circle cx="258" cy="225" r="17" fill="#3B82F6" />
+  <circle cx="306" cy="225" r="17" fill="#60A5FA" />
+
+  <!-- Sparkle Accent Top Right -->
+  <path d="M370,125 Q370,140 385,140 Q370,140 370,155 Q370,140 355,140 Q370,140 370,125 Z" fill="#FFFFFF" opacity="0.9" />
 </svg>
