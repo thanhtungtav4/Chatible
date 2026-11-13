@@ -19,6 +19,7 @@ import { systemSettings } from '../database/schema/settings.js';
 import { inArray } from 'drizzle-orm';
 import { decryptSettingSecret } from '../mail/mail.service.js';
 import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
+import { createConfiguredKms } from '../kms/cloud-kms.service.js';
 
 export interface S3ConfigOptions {
   endpoint: string;
@@ -279,7 +280,7 @@ export class HybridObjectStore implements MediaObjectStore {
 
       if (secretKey && secretKey.startsWith('enc:')) {
         try {
-          const crypto = new EnvelopeCryptoService(config.appMasterKek);
+          const crypto = new EnvelopeCryptoService(createConfiguredKms().kms);
           secretKey = await decryptSettingSecret(secretKey, crypto);
         } catch {}
       }
