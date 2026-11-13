@@ -19,6 +19,40 @@ export class MediaController {
   }
 
   registerRoutes(app: FastifyInstance) {
+    if (!app.hasContentTypeParser('application/octet-stream')) {
+      app.addContentTypeParser(
+        ['application/octet-stream', 'application/binary', 'binary/octet-stream'],
+        { parseAs: 'buffer', bodyLimit: 25 * 1024 * 1024 },
+        (_req, body, done) => {
+          done(null, body);
+        }
+      );
+    }
+
+    app.put(
+      '/api/v1/media/upload-local/*',
+      {
+        bodyLimit: 25 * 1024 * 1024,
+      },
+      async (req: FastifyRequest, reply: FastifyReply) => {
+        try {
+          const rawKey = (req.params as { '*': string })['*'];
+          if (!rawKey) {
+            return reply.status(400).send({ error: 'Thiếu định danh tệp media.' });
+          }
+          const key = decodeURIComponent(rawKey);
+          const body = req.body as Buffer;
+          if (!body || !Buffer.isBuffer(body)) {
+            return reply.status(400).send({ error: 'Dữ liệu tệp không hợp lệ.' });
+          }
+          await this.mediaService.saveLocalUpload(key, body);
+          return reply.status(200).send({ success: true });
+        } catch (error) {
+          return sendApiError(reply, error, { fallbackStatus: 500 });
+        }
+      }
+    );
+
     app.post('/api/v1/media/presign-upload', async (req: FastifyRequest, reply: FastifyReply) => {
       try {
         const userId = await authenticateRequest(req, 'claims_only');

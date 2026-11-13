@@ -404,6 +404,64 @@ export function renderAdminDashboardHtml(nonce: string): string {
             </div>
           </div>
 
+          <div class="card-title" style="margin-top: 8px; margin-bottom: 0;">
+            <span>📦 Cấu Hình Lưu Trữ Media & Tệp Tin (Object Storage / S3 / R2)</span>
+          </div>
+          <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Phương Thức Lưu Trữ (Storage Driver)</label>
+              <select id="cfg-storage-driver" class="input-dark" style="width: 100%;">
+                <option value="LOCAL">📁 Lưu Trực Tiếp Trên Máy Chủ VPS (data/media_uploads - Mặc định)</option>
+                <option value="S3">☁️ Cloud Object Storage S3 / Cloudflare R2 / AWS S3 / MinIO</option>
+              </select>
+              <span style="font-size: 11.5px; color: var(--muted); margin-top: 4px; display: block;">Mặc định không cấu hình S3 thì tệp ảnh/audio được mã hóa AES-GCM và lưu an toàn trên ổ đĩa VPS cục bộ, không bao giờ báo lỗi thiếu lưu trữ.</span>
+            </div>
+
+            <div id="storage-s3-config-box" style="display: none; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); padding-top: 14px;">
+              <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+                <div>
+                  <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">S3 / R2 Endpoint</label>
+                  <input type="text" id="cfg-storage-endpoint" class="input-dark" style="width:100%;font-family:'JetBrains Mono',monospace;" placeholder="https://<account-id>.r2.cloudflarestorage.com" />
+                </div>
+                <div>
+                  <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Bucket Name</label>
+                  <input type="text" id="cfg-storage-bucket" class="input-dark" style="width:100%;" placeholder="chatible-media" />
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div>
+                  <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Access Key ID</label>
+                  <input type="text" id="cfg-storage-access-key" class="input-dark" style="width:100%;font-family:'JetBrains Mono',monospace;" placeholder="AKIA..." />
+                </div>
+                <div>
+                  <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Secret Access Key</label>
+                  <input type="password" id="cfg-storage-secret-key" class="input-dark" style="width:100%;font-family:'JetBrains Mono',monospace;" placeholder="••••••••" />
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div>
+                  <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Region (Vùng)</label>
+                  <input type="text" id="cfg-storage-region" class="input-dark" style="width:100%;" placeholder="auto (hoặc us-east-1)" />
+                </div>
+                <div style="display: flex; align-items: center; padding-top: 20px;">
+                  <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                    <input type="checkbox" id="cfg-storage-force-path" checked />
+                    <span>Force Path Style (khuyên dùng cho Cloudflare R2 / MinIO)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <button type="button" id="btn-test-storage" class="btn-action btn-secondary">⚡ Kiểm Tra Kết Nối Lưu Trữ</button>
+                <span id="storage-test-status" style="font-size: 12px; display: none;"></span>
+              </div>
+            </div>
+          </div>
+
           <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
             <div>
               <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Chat Ngẫu Nhiên (Ngày)</label>
@@ -456,6 +514,9 @@ export function renderAdminDashboardHtml(nonce: string): string {
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px;text-align:center;">Đăng nhập nhanh bằng tài khoản Google liên kết:</div>
         <div id="google-admin-btn" style="min-height:44px;display:flex;justify-content:center;"></div>
         <div id="admin-linked-gmail-hint" style="font-size:11.5px;color:#10b981;margin-top:6px;text-align:center;"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center;line-height:1.4;">
+          (Lưu ý: Nếu trình duyệt Brave bị kẹt màn hình trắng, hãy tắt khiên Brave Shields hoặc dùng tài khoản & mật khẩu bên dưới)
+        </div>
         
         <div style="display:flex;align-items:center;gap:12px;margin:18px 0 14px;">
           <div style="flex:1;height:1px;background:var(--border);"></div>
@@ -523,6 +584,7 @@ export function renderAdminDashboardHtml(nonce: string): string {
                     window.google.accounts.id.initialize({
                       client_id: statusData.googleClientId,
                       ux_mode: 'popup',
+                      itp_support: true,
                       auto_select: false,
                       callback: async (resp) => {
                         errEl.style.display = 'none';
@@ -1036,6 +1098,16 @@ export function renderAdminDashboardHtml(nonce: string): string {
         document.getElementById('cfg-mail-password').value = map['mail.smtp.password'] || '';
         document.getElementById('cfg-mail-from-name').value = map['mail.smtp.from_name'] || 'Chatible Support';
         document.getElementById('cfg-mail-from-address').value = map['mail.smtp.from_address'] || 'no-reply@chatible.app';
+
+        const storageDriver = map['storage.driver'] || (map['storage.s3.endpoint'] ? 'S3' : 'LOCAL');
+        document.getElementById('cfg-storage-driver').value = storageDriver;
+        document.getElementById('storage-s3-config-box').style.display = storageDriver === 'S3' ? 'flex' : 'none';
+        document.getElementById('cfg-storage-endpoint').value = map['storage.s3.endpoint'] || '';
+        document.getElementById('cfg-storage-bucket').value = map['storage.s3.bucket'] || '';
+        document.getElementById('cfg-storage-access-key').value = map['storage.s3.access_key_id'] || '';
+        document.getElementById('cfg-storage-secret-key').value = map['storage.s3.secret_access_key'] || '';
+        document.getElementById('cfg-storage-region').value = map['storage.s3.region'] || 'auto';
+        document.getElementById('cfg-storage-force-path').checked = map['storage.s3.force_path_style'] !== 'false';
       } catch {}
     }
 
@@ -1143,9 +1215,19 @@ export function renderAdminDashboardHtml(nonce: string): string {
         'mail.smtp.password': document.getElementById('cfg-mail-password').value,
         'mail.smtp.from_name': document.getElementById('cfg-mail-from-name').value.trim() || 'Chatible Support',
         'mail.smtp.from_address': document.getElementById('cfg-mail-from-address').value.trim() || 'no-reply@chatible.app',
+        'storage.driver': document.getElementById('cfg-storage-driver').value,
+        'storage.s3.endpoint': document.getElementById('cfg-storage-endpoint').value.trim(),
+        'storage.s3.bucket': document.getElementById('cfg-storage-bucket').value.trim(),
+        'storage.s3.access_key_id': document.getElementById('cfg-storage-access-key').value.trim(),
+        'storage.s3.region': document.getElementById('cfg-storage-region').value.trim() || 'auto',
+        'storage.s3.force_path_style': document.getElementById('cfg-storage-force-path').checked ? 'true' : 'false',
       };
       if (adminPass.trim()) {
         settingsPayload['admin.auth.password'] = adminPass;
+      }
+      const storageSecret = document.getElementById('cfg-storage-secret-key').value;
+      if (storageSecret && storageSecret !== '••••••••••••••••') {
+        settingsPayload['storage.s3.secret_access_key'] = storageSecret;
       }
       const res = await adminFetch('/api/v1/admin/settings', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
@@ -1189,6 +1271,51 @@ export function renderAdminDashboardHtml(nonce: string): string {
       statusEl.textContent = res.ok ? '✓ ' + data.message : '❌ ' + (data.error || 'Thất bại');
       statusEl.style.color = res.ok ? 'var(--success)' : 'var(--danger)';
       statusEl.style.display = 'block';
+    });
+
+    document.getElementById('cfg-storage-driver').addEventListener('change', (e) => {
+      document.getElementById('storage-s3-config-box').style.display = e.target.value === 'S3' ? 'flex' : 'none';
+    });
+
+    document.getElementById('btn-test-storage').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-test-storage');
+      const statusEl = document.getElementById('storage-test-status');
+      btn.disabled = true;
+      statusEl.textContent = '⏳ Đang kiểm tra kết nối...';
+      statusEl.style.color = 'var(--text)';
+      statusEl.style.display = 'inline';
+
+      const driver = document.getElementById('cfg-storage-driver').value;
+      const payload = {
+        driver,
+        endpoint: document.getElementById('cfg-storage-endpoint').value.trim(),
+        bucket: document.getElementById('cfg-storage-bucket').value.trim(),
+        accessKeyId: document.getElementById('cfg-storage-access-key').value.trim(),
+        secretAccessKey: document.getElementById('cfg-storage-secret-key').value,
+        region: document.getElementById('cfg-storage-region').value.trim() || 'auto',
+        forcePathStyle: document.getElementById('cfg-storage-force-path').checked,
+      };
+
+      try {
+        const res = await adminFetch('/api/v1/admin/settings/test-storage', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        btn.disabled = false;
+        if (!res.ok || !data.success) {
+          statusEl.textContent = '❌ ' + (data.message || data.error || 'Kiểm tra thất bại');
+          statusEl.style.color = 'var(--danger)';
+        } else {
+          statusEl.textContent = '✓ ' + (data.message || 'Kết nối thành công!');
+          statusEl.style.color = 'var(--success)';
+        }
+      } catch {
+        btn.disabled = false;
+        statusEl.textContent = '❌ Lỗi kết nối tới máy chủ';
+        statusEl.style.color = 'var(--danger)';
+      }
     });
 
     let pendingMfaSecret = '';

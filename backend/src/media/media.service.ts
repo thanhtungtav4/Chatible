@@ -415,6 +415,19 @@ export class MediaService {
     }
   }
 
+  async saveLocalUpload(key: string, body: Buffer): Promise<void> {
+    if (this.storage.putStream) {
+      await this.storage.putStream({
+        key,
+        body,
+        contentType: 'application/octet-stream',
+        contentLength: body.length,
+      });
+    } else {
+      throw new MediaError(500, 'Kho lưu trữ hiện tại không hỗ trợ tải tệp trực tiếp.');
+    }
+  }
+
   /**
    * Gateway & Friends verification guard ensuring a chat media message binds to a READY,
    * unrevoked, authorized asset with matching mediaType and adult flag.

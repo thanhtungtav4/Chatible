@@ -575,6 +575,39 @@ export class AdminController {
       }
     );
 
+    app.post(
+      '/api/v1/admin/settings/test-storage',
+      async (
+        req: FastifyRequest<{
+          Body: {
+            driver?: string;
+            endpoint?: string;
+            bucket?: string;
+            accessKeyId?: string;
+            secretAccessKey?: string;
+            region?: string;
+            forcePathStyle?: boolean;
+          };
+        }>,
+        reply
+      ) => {
+        if (!(await this.validateAdminAuth(req))) {
+          return reply.status(401).send({ error: 'Yêu cầu mã khóa quản trị viên hợp lệ (Admin Token Required).' });
+        }
+        try {
+          const result = await this.adminService.testObjectStorageConnection(
+            config.superAdminId,
+            req.body,
+            req.ip
+          );
+          return reply.send(result);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Kiểm tra kết nối lưu trữ thất bại.';
+          return reply.status(400).send({ error: msg });
+        }
+      }
+    );
+
     // Admin 2FA MFA Management
     app.get('/api/v1/admin/mfa/status', async (req, reply) => {
       if (!(await this.validateAdminAuth(req))) {

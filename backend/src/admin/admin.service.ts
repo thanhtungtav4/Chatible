@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import * as OTPAuth from 'otpauth';
+import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { db } from '../database/index.js';
 import { users, profiles } from '../database/schema/users.js';
 import { chatSessions } from '../database/schema/sessions.js';
@@ -805,6 +806,7 @@ export class AdminService {
   private inferSettingCategory(key: string): string {
     if (key.startsWith('mail.')) return 'MAIL';
     if (key.startsWith('auth.')) return 'AUTH';
+    if (key.startsWith('storage.')) return 'STORAGE';
     if (key.startsWith('retention.')) return 'RETENTION';
     if (key.startsWith('admin.')) return 'SECURITY';
     return 'GENERAL';
@@ -825,7 +827,11 @@ export class AdminService {
     return rows.map((row) => ({
       ...row,
       value:
-        (row.key === 'mail.smtp.password' || row.key === 'admin.mfa.totp_secret' || row.key === 'admin.auth.password_hash') && row.value
+        (row.key === 'mail.smtp.password' ||
+          row.key === 'storage.s3.secret_access_key' ||
+          row.key === 'admin.mfa.totp_secret' ||
+          row.key === 'admin.auth.password_hash') &&
+        row.value
           ? SMTP_PASSWORD_MASK
           : row.value,
     }));
@@ -860,6 +866,14 @@ export class AdminService {
         }
         const encrypted = await encryptSettingSecret(valueStr, this.cryptoService);
         preparedEntries.push({ key: 'mail.smtp.password', value: encrypted, category: 'MAIL' });
+        continue;
+      }
+      if (key === 'storage.s3.secret_access_key') {
+        if (valueStr === SMTP_PASSWORD_MASK || !valueStr.trim()) {
+          continue;
+        }
+        const encrypted = await encryptSettingSecret(valueStr, this.cryptoService);
+        preparedEntries.push({ key: 'storage.s3.secret_access_key', value: encrypted, category: 'STORAGE' });
         continue;
       }
 
@@ -936,6 +950,119 @@ export class AdminService {
     });
 
     return result;
+  }
+
+  async testObjectStorageConnection(
+    actorId: string,
+    options?: {
+      driver?: string;
+      endpoint?: string;
+      bucket?: string;
+      accessKeyId?: string;
+      secretAccessKey?: string;
+      region?: string;
+      forcePathStyle?: boolean;
+    },
+    ipAddress?: string
+  ): Promise<{ success: boolean; message: string; error?: string }> {
+    if (actorId !== this.superAdminId) {
+      throw new Error('Chỉ Super Admin mới có quyền kiểm tra cấu hình lưu trữ.');
+    }
+
+    const driver = options?.driver || 'LOCAL';
+    if (driver === 'LOCAL') {
+      return {
+        success: true,
+        message: 'Lưu trữ cục bộ trên VPS (data/media_uploads) đang hoạt động và sẵn sàng lưu tệp.',
+      };
+    }
+
+    let endpoint = options?.endpoint?.trim();
+    let bucket = options?.bucket?.trim();
+    let accessKeyId = options?.accessKeyId?.trim();
+    let secretAccessKey = options?.secretAccessKey?.trim();
+    let region = options?.region?.trim() || 'auto';
+    let forcePathStyle = options?.forcePathStyle ?? true;
+
+    if (!endpoint || !bucket || !accessKeyId || !secretAccessKey || secretAccessKey === SMTP_PASSWORD_MASK) {
+      const rows = await db
+        .select({ key: systemSettings.key, value: systemSettings.value })
+        .from(systemSettings)
+        .where(
+          inArray(systemSettings.key, [
+            'storage.s3.endpoint',
+            'storage.s3.bucket',
+            'storage.s3.access_key_id',
+            'storage.s3.secret_access_key',
+            'storage.s3.region',
+            'storage.s3.force_path_style',
+          ])
+        );
+      const map = new Map(rows.map((r) => [r.key, r.value]));
+
+      if (!endpoint) endpoint = map.get('storage.s3.endpoint') || config.objectStorage.endpoint;
+      if (!bucket) bucket = map.get('storage.s3.bucket') || config.objectStorage.bucket;
+      if (!accessKeyId) accessKeyId = map.get('storage.s3.access_key_id') || config.objectStorage.accessKeyId;
+      if (!secretAccessKey || secretAccessKey === SMTP_PASSWORD_MASK) {
+        let rawSecret = map.get('storage.s3.secret_access_key') || config.objectStorage.secretAccessKey;
+        if (rawSecret && rawSecret.startsWith('enc:')) {
+          try {
+            rawSecret = await decryptSettingSecret(rawSecret, this.cryptoService);
+          } catch {}
+        }
+        secretAccessKey = rawSecret;
+      }
+      if (!region) region = map.get('storage.s3.region') || config.objectStorage.region || 'auto';
+      if (options?.forcePathStyle === undefined && map.has('storage.s3.force_path_style')) {
+        forcePathStyle = map.get('storage.s3.force_path_style') === 'true';
+      }
+    }
+
+    if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+      return {
+        success: false,
+        message: 'Thiếu thông tin kết nối S3/R2 (Endpoint, Bucket, Access Key ID hoặc Secret Access Key).',
+      };
+    }
+
+    try {
+      const s3Client = new S3Client({
+        endpoint,
+        region,
+        forcePathStyle,
+        credentials: {
+          accessKeyId,
+          secretAccessKey,
+        },
+      });
+
+      const cmd = new ListObjectsV2Command({
+        Bucket: bucket,
+        MaxKeys: 1,
+      });
+
+      await s3Client.send(cmd);
+
+      await this.auditService.recordAudit({
+        actorId,
+        action: 'TEST_OBJECT_STORAGE',
+        targetResourceId: actorId,
+        ipAddress,
+        details: { bucket, endpoint },
+      });
+
+      return {
+        success: true,
+        message: `Kết nối S3/R2 thành công! Đã kết nối với bucket "${bucket}".`,
+      };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        message: `Kết nối S3 thất bại: ${errorMsg}`,
+        error: errorMsg,
+      };
+    }
   }
 
   private async getStoredTotpSecret(): Promise<{ enabled: boolean; secretBase32: string }> {
