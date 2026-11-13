@@ -11,6 +11,7 @@ export function renderAdminDashboardHtml(nonce: string): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -274,6 +275,34 @@ export function renderAdminDashboardHtml(nonce: string): string {
         </div>
 
         <form id="settings-auth-form" style="display: flex; flex-direction: column; gap: 20px; max-width: 680px;">
+          <!-- Tài khoản Quản trị Super Admin (/admin-auth) -->
+          <div style="background: rgba(0, 102, 255, 0.05); border: 1px solid rgba(0, 102, 255, 0.25); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="font-size: 14px; display: block; color: var(--accent);">👑 Tài Khoản & Quyền Quản Trị Super Admin (/admin-auth)</strong>
+                <span style="font-size: 12px; color: var(--muted);">Cấu hình tài khoản đăng nhập và tài khoản Gmail liên kết quyền quản trị</span>
+              </div>
+              <span class="brand-badge">/admin-auth</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Tên đăng nhập Admin</label>
+                <input type="text" id="cfg-admin-username" class="input-dark" style="width:100%;" placeholder="admin" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Đổi Mật khẩu Admin</label>
+                <input type="password" id="cfg-admin-password" class="input-dark" style="width:100%;" placeholder="•••••••• (để trống nếu không đổi)" />
+              </div>
+            </div>
+
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Gmail Liên Kết Đăng Nhập Quản Trị (Google Sign-In)</label>
+              <input type="email" id="cfg-admin-google-email" class="input-dark" style="width:100%;font-family:'JetBrains Mono',monospace;" placeholder="nguyenthanhtung74119@gmail.com" />
+              <span style="font-size: 11.5px; color: var(--muted); margin-top: 4px; display: block;">Khi đăng nhập bằng Google tại <code>/admin-auth</code>, tài khoản Gmail này sẽ tự động được cấp quyền Super Admin.</span>
+            </div>
+          </div>
+
           <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 18px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
               <div>
@@ -413,22 +442,44 @@ export function renderAdminDashboardHtml(nonce: string): string {
     </div>
   </div>
 
-  <!-- Admin Login Modal (Secret + TOTP MFA) -->
+  <!-- Admin Login Modal (Username + Password / Secret / Google Sign-In) -->
   <div class="modal-overlay" id="admin-login-modal" style="display: none;">
-    <div class="modal-box" style="width: 420px;">
-      <h3 style="margin-top:0;">🔒 Xác Thực Super Admin (S11)</h3>
-      <p style="font-size:12.5px;color:var(--muted);">Phiên làm việc có hiệu lực 15 phút qua cookie HttpOnly bảo mật.</p>
-      <form id="admin-login-form" style="display:flex;flex-direction:column;gap:12px;margin-top:14px;">
+    <div class="modal-box" style="width: 440px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <h3 style="margin:0;font-size:18px;">🔒 Đăng Nhập Quản Trị Hệ Thống</h3>
+        <span class="brand-badge">/admin-auth</span>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin-top:0;">Xác thực Super Admin để truy cập Bảng điều hành Chatible.</p>
+      
+      <!-- Google Sign-In Section for Admin -->
+      <div id="admin-google-login-section" style="margin-top:16px;display:none;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;text-align:center;">Đăng nhập nhanh bằng tài khoản Google liên kết:</div>
+        <div id="google-admin-btn" style="min-height:44px;display:flex;justify-content:center;"></div>
+        <div id="admin-linked-gmail-hint" style="font-size:11.5px;color:#10b981;margin-top:6px;text-align:center;"></div>
+        
+        <div style="display:flex;align-items:center;gap:12px;margin:18px 0 14px;">
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Hoặc dùng tài khoản Admin</span>
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+        </div>
+      </div>
+
+      <form id="admin-login-form" style="display:flex;flex-direction:column;gap:12px;">
+        <input type="hidden" id="admin-login-secret" />
         <div>
-          <label style="display:block;font-size:12px;margin-bottom:4px;">Admin Secret Token</label>
-          <input type="password" id="admin-login-secret" class="input-dark" style="width:100%;" required />
+          <label style="display:block;font-size:12px;margin-bottom:4px;">Tên đăng nhập (Username)</label>
+          <input type="text" id="admin-login-username" class="input-dark" style="width:100%;" placeholder="admin" value="admin" autocomplete="username" />
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;margin-bottom:4px;">Mật khẩu (Password)</label>
+          <input type="password" id="admin-login-password" class="input-dark" style="width:100%;" placeholder="Nhập mật khẩu quản trị" autocomplete="current-password" />
         </div>
         <div id="admin-login-totp-group" style="display:none;">
-          <label style="display:block;font-size:12px;margin-bottom:4px;">Mã TOTP 2 bước (6 chữ số)</label>
+          <label style="display:block;font-size:12px;margin-bottom:4px;">Mã xác thực TOTP 2 bước (6 chữ số)</label>
           <input type="text" id="admin-login-totp" class="input-dark" style="width:100%;" maxlength="6" placeholder="000000" />
         </div>
-        <div id="admin-login-error" style="color:var(--danger);font-size:12px;display:none;"></div>
-        <button type="submit" class="btn-action" style="padding:10px;">Đăng Nhập Bảng Điều Hành</button>
+        <div id="admin-login-error" style="color:var(--danger);font-size:12px;display:none;background:rgba(255,59,48,0.1);padding:8px 12px;border-radius:8px;border:1px solid rgba(255,59,48,0.2);"></div>
+        <button type="submit" class="btn-action" style="padding:11px;font-size:13.5px;font-weight:700;">Đăng Nhập Quản Trị</button>
       </form>
     </div>
   </div>
@@ -447,29 +498,86 @@ export function renderAdminDashboardHtml(nonce: string): string {
       if (pendingLoginPromise) return pendingLoginPromise;
 
       pendingLoginPromise = (async () => {
-        try {
-          const statusRes = await fetch('/api/v1/admin/auth/status');
-          const statusData = await statusRes.json();
-          document.getElementById('admin-login-totp-group').style.display = statusData.mfaRequired ? 'block' : 'none';
-        } catch {}
+        const modal = document.getElementById('admin-login-modal');
+        const form = document.getElementById('admin-login-form');
+        const errEl = document.getElementById('admin-login-error');
+        errEl.style.display = 'none';
+        modal.style.display = 'flex';
 
         return await new Promise((resolve) => {
-          const modal = document.getElementById('admin-login-modal');
-          const form = document.getElementById('admin-login-form');
-          const errEl = document.getElementById('admin-login-error');
-          errEl.style.display = 'none';
-          modal.style.display = 'flex';
+          // 1. Fetch public status to configure MFA, username, and Google Sign-in
+          fetch('/api/v1/admin/auth/status')
+            .then(r => r.json())
+            .then(statusData => {
+              document.getElementById('admin-login-totp-group').style.display = statusData.mfaRequired ? 'block' : 'none';
+              if (statusData.defaultUsername) {
+                document.getElementById('admin-login-username').value = statusData.defaultUsername;
+              }
+              if (statusData.googleAuthEnabled && statusData.googleClientId) {
+                document.getElementById('admin-google-login-section').style.display = 'block';
+                if (statusData.linkedGoogleEmail) {
+                  document.getElementById('admin-linked-gmail-hint').textContent = '✓ Gmail đã liên kết: ' + statusData.linkedGoogleEmail;
+                }
+                const initGsi = () => {
+                  if (window.google?.accounts?.id) {
+                    window.google.accounts.id.initialize({
+                      client_id: statusData.googleClientId,
+                      callback: async (resp) => {
+                        errEl.style.display = 'none';
+                        try {
+                          const gRes = await fetch('/api/v1/admin/auth/google', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ idToken: resp.credential }),
+                            credentials: 'include',
+                          });
+                          const gData = await gRes.json().catch(() => ({}));
+                          if (!gRes.ok) {
+                            errEl.textContent = gData.error || 'Đăng nhập Google thất bại.';
+                            errEl.style.display = 'block';
+                            return;
+                          }
+                          isAdminAuthenticated = true;
+                          modal.style.display = 'none';
+                          resolve(true);
+                        } catch {
+                          errEl.textContent = 'Lỗi kết nối máy chủ khi xác thực Google.';
+                          errEl.style.display = 'block';
+                        }
+                      }
+                    });
+                    window.google.accounts.id.renderButton(
+                      document.getElementById('google-admin-btn'),
+                      { theme: 'outline', size: 'large', width: '380', text: 'signin_with', locale: 'vi' }
+                    );
+                  } else {
+                    setTimeout(initGsi, 150);
+                  }
+                };
+                initGsi();
+              }
+            })
+            .catch(() => {});
 
           form.onsubmit = async (e) => {
             e.preventDefault();
             errEl.style.display = 'none';
-            const secret = document.getElementById('admin-login-secret').value.trim();
+            const secret = (document.getElementById('admin-login-secret')?.value || '').trim();
+            const username = (document.getElementById('admin-login-username')?.value || 'admin').trim();
+            const password = (document.getElementById('admin-login-password')?.value || secret || '').trim();
             const totpCode = document.getElementById('admin-login-totp').value.trim();
+
+            if (!password && !secret) {
+              errEl.textContent = 'Vui lòng nhập mật khẩu quản trị.';
+              errEl.style.display = 'block';
+              return;
+            }
+
             const res = await fetch('/api/v1/admin/auth', {
               method: 'POST',
               credentials: 'include',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ secret, totpCode }),
+              body: JSON.stringify({ username, password, secret, totpCode }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -479,7 +587,7 @@ export function renderAdminDashboardHtml(nonce: string): string {
             }
             isAdminAuthenticated = true;
             modal.style.display = 'none';
-            document.getElementById('admin-login-secret').value = '';
+            document.getElementById('admin-login-password').value = '';
             document.getElementById('admin-login-totp').value = '';
             resolve(true);
           };
@@ -908,6 +1016,9 @@ export function renderAdminDashboardHtml(nonce: string): string {
         const list = await res.json();
         const map = {};
         list.forEach(item => { map[item.key] = item.value; });
+        document.getElementById('cfg-admin-username').value = map['admin.auth.username'] || 'admin';
+        document.getElementById('cfg-admin-password').value = '';
+        document.getElementById('cfg-admin-google-email').value = map['admin.google.email'] || 'nguyenthanhtung74119@gmail.com';
         document.getElementById('cfg-google-enabled').checked = map['auth.google.enabled'] !== 'false';
         document.getElementById('cfg-google-client-id').value = map['auth.google.client_id'] || '';
         document.getElementById('cfg-reg-enabled').checked = map['auth.registration.enabled'] !== 'false';
@@ -1011,27 +1122,32 @@ export function renderAdminDashboardHtml(nonce: string): string {
     document.getElementById('settings-auth-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const statusEl = document.getElementById('settings-save-status');
+      const adminPass = document.getElementById('cfg-admin-password').value;
+      const settingsPayload = {
+        'admin.auth.username': document.getElementById('cfg-admin-username').value.trim() || 'admin',
+        'admin.google.email': document.getElementById('cfg-admin-google-email').value.trim().toLowerCase(),
+        'auth.google.enabled': document.getElementById('cfg-google-enabled').checked ? 'true' : 'false',
+        'auth.google.client_id': document.getElementById('cfg-google-client-id').value.trim(),
+        'auth.registration.enabled': document.getElementById('cfg-reg-enabled').checked ? 'true' : 'false',
+        'auth.email_verification.required': document.getElementById('cfg-email-verif-required').checked ? 'true' : 'false',
+        'retention.random_chat_days': document.getElementById('cfg-retention-random').value.trim() || '7',
+        'retention.friend_chat_days': document.getElementById('cfg-retention-friend').value.trim() || '30',
+        'retention.report_evidence_days': document.getElementById('cfg-retention-report').value.trim() || '90',
+        'mail.smtp.enabled': document.getElementById('cfg-mail-enabled').checked ? 'true' : 'false',
+        'mail.smtp.host': document.getElementById('cfg-mail-host').value.trim(),
+        'mail.smtp.port': document.getElementById('cfg-mail-port').value.trim() || '587',
+        'mail.smtp.secure': document.getElementById('cfg-mail-secure').checked ? 'true' : 'false',
+        'mail.smtp.user': document.getElementById('cfg-mail-user').value.trim(),
+        'mail.smtp.password': document.getElementById('cfg-mail-password').value,
+        'mail.smtp.from_name': document.getElementById('cfg-mail-from-name').value.trim() || 'Chatible Support',
+        'mail.smtp.from_address': document.getElementById('cfg-mail-from-address').value.trim() || 'no-reply@chatible.app',
+      };
+      if (adminPass.trim()) {
+        settingsPayload['admin.auth.password'] = adminPass;
+      }
       const res = await adminFetch('/api/v1/admin/settings', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          settings: {
-            'auth.google.enabled': document.getElementById('cfg-google-enabled').checked ? 'true' : 'false',
-            'auth.google.client_id': document.getElementById('cfg-google-client-id').value.trim(),
-            'auth.registration.enabled': document.getElementById('cfg-reg-enabled').checked ? 'true' : 'false',
-            'auth.email_verification.required': document.getElementById('cfg-email-verif-required').checked ? 'true' : 'false',
-            'retention.random_chat_days': document.getElementById('cfg-retention-random').value.trim() || '7',
-            'retention.friend_chat_days': document.getElementById('cfg-retention-friend').value.trim() || '30',
-            'retention.report_evidence_days': document.getElementById('cfg-retention-report').value.trim() || '90',
-            'mail.smtp.enabled': document.getElementById('cfg-mail-enabled').checked ? 'true' : 'false',
-            'mail.smtp.host': document.getElementById('cfg-mail-host').value.trim(),
-            'mail.smtp.port': document.getElementById('cfg-mail-port').value.trim() || '587',
-            'mail.smtp.secure': document.getElementById('cfg-mail-secure').checked ? 'true' : 'false',
-            'mail.smtp.user': document.getElementById('cfg-mail-user').value.trim(),
-            'mail.smtp.password': document.getElementById('cfg-mail-password').value,
-            'mail.smtp.from_name': document.getElementById('cfg-mail-from-name').value.trim() || 'Chatible Support',
-            'mail.smtp.from_address': document.getElementById('cfg-mail-from-address').value.trim() || 'no-reply@chatible.app',
-          },
-        }),
+        body: JSON.stringify({ settings: settingsPayload }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

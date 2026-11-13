@@ -558,7 +558,7 @@ describe('Admin hardening, MFA TOTP, media decrypt auditing, session pagination,
       expect(pageTarget?.webSocketDebuggerUrl).toBeTruthy();
 
       await cdp.connect(pageTarget!.webSocketDebuggerUrl!);
-      await cdp.send('Page.navigate', { url: `${baseUrl}/admin` });
+      await cdp.send('Page.navigate', { url: `${baseUrl}/admin-auth` });
 
       await cdp.waitFor(
         `document.getElementById('admin-login-modal')?.style.display === 'flex'`,

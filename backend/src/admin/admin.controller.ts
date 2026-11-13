@@ -34,10 +34,33 @@ export class AdminController {
   }
 
   private verifyAdminSecret(candidate: string): boolean {
-    if (!config.adminSecret || !candidate) return false;
-    const secretBuf = Buffer.from(config.adminSecret);
+    const secrets = [config.adminSecret, config.adminPassword].filter(Boolean);
+    if (!candidate || secrets.length === 0) return false;
     const candidateBuf = Buffer.from(candidate);
-    return secretBuf.length === candidateBuf.length && timingSafeEqual(secretBuf, candidateBuf);
+    for (const sec of secrets) {
+      const secretBuf = Buffer.from(sec);
+      if (secretBuf.length === candidateBuf.length && timingSafeEqual(secretBuf, candidateBuf)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async verifyAdminCredentials(
+    username?: string,
+    password?: string,
+    secret?: string
+  ): Promise<boolean> {
+    if (typeof this.adminService.verifyAdminCredentials === 'function') {
+      return await this.adminService.verifyAdminCredentials(username, password, secret);
+    }
+    const candidate = secret || password || '';
+    if (username && password) {
+      const expectedUser = config.adminUsername || 'admin';
+      if (username.trim().toLowerCase() !== expectedUser.toLowerCase()) return false;
+      return this.verifyAdminSecret(candidate);
+    }
+    return this.verifyAdminSecret(candidate);
   }
 
   private extractAdminToken(req: FastifyRequest): string | null {
@@ -59,31 +82,105 @@ export class AdminController {
     }
   }
 
+  private async verifyGoogleIdToken(idToken: string): Promise<{ sub: string; email: string; name?: string }> {
+    const activeClientId = await this.adminService.getGoogleClientId();
+    if (!activeClientId) {
+      throw new Error('Google OAuth chưa được cấu hình.');
+    }
+    const tokenUrl = new URL('https://oauth2.googleapis.com/tokeninfo');
+    tokenUrl.searchParams.set('id_token', idToken);
+    const res = await fetch(tokenUrl);
+    if (!res.ok) {
+      throw new Error('Google ID Token không hợp lệ hoặc đã hết hạn.');
+    }
+    const data = (await res.json()) as {
+      sub?: string;
+      email?: string;
+      name?: string;
+      aud?: string;
+      iss?: string;
+      exp?: string;
+      email_verified?: string | boolean;
+    };
+    const expiresAt = Number(data.exp);
+    const validIssuer = data.iss === 'accounts.google.com' || data.iss === 'https://accounts.google.com';
+    const emailVerified = data.email_verified === true || data.email_verified === 'true';
+    if (
+      !data.sub ||
+      !data.email ||
+      data.aud !== activeClientId ||
+      !validIssuer ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= Date.now() / 1000 ||
+      !emailVerified
+    ) {
+      throw new Error('Google ID Token thiếu claim hợp lệ hoặc không dành cho ứng dụng này.');
+    }
+    return {
+      sub: data.sub,
+      email: data.email.toLowerCase().trim(),
+      name: data.name,
+    };
+  }
+
   registerRoutes(app: FastifyInstance) {
-    // Public Admin Auth capability status (only whether MFA OTP is required, zero secret disclosure)
+    // Public Admin Auth capability status
     app.get('/api/v1/admin/auth/status', async (_req, reply) => {
       try {
         const mfa = await this.adminService.getAdminMfaStatus();
-        return reply.send({ mfaRequired: mfa.enabled });
+        const authSettings = await this.adminService.getAdminAuthSettings();
+        const googleClientId = await this.adminService.getGoogleClientId();
+        return reply.send({
+          mfaRequired: mfa.enabled,
+          defaultUsername: authSettings.username,
+          googleAuthEnabled: Boolean(googleClientId),
+          googleClientId,
+          linkedGoogleEmail: authSettings.googleEmail,
+        });
       } catch {
-        return reply.send({ mfaRequired: Boolean(config.adminTotpSecret) });
+        return reply.send({
+          mfaRequired: Boolean(config.adminTotpSecret),
+          defaultUsername: config.adminUsername || 'admin',
+          googleAuthEnabled: Boolean(config.googleClientId),
+          googleClientId: config.googleClientId || '',
+          linkedGoogleEmail: config.adminGoogleEmail || 'nguyenthanhtung74119@gmail.com',
+        });
       }
     });
 
-    // Exchange configured administrator secret (+ optional/required TOTP MFA) for short-lived 15m JWT + HttpOnly Strict cookie.
+    // Exchange administrator credentials (username+password OR secret token + optional TOTP) for 15m JWT + HttpOnly Strict cookie.
     app.post(
       '/api/v1/admin/auth',
-      async (req: FastifyRequest<{ Body: { secret?: string; totpCode?: string } }>, reply: FastifyReply) => {
+      async (
+        req: FastifyRequest<{
+          Body: {
+            username?: string;
+            password?: string;
+            secret?: string;
+            totpCode?: string;
+          };
+        }>,
+        reply: FastifyReply
+      ) => {
         const clientIp = req.ip || '127.0.0.1';
         if (!(await this.adminAuthLimiter.check(`admin_login:${clientIp}`))) {
           return reply.status(429).send({ error: 'Quá nhiều lần đăng nhập quản trị thất bại. Vui lòng thử lại sau 15 phút.' });
         }
 
-        if (!this.verifyAdminSecret(req.body?.secret || '')) {
-          return reply.status(config.adminSecret ? 401 : 503).send({ error: 'Thông tin quản trị chưa hợp lệ hoặc chưa được cấu hình.' });
+        const valid = await this.verifyAdminCredentials(
+          req.body?.username,
+          req.body?.password,
+          req.body?.secret
+        );
+        if (!valid) {
+          return reply.status(401).send({ error: 'Tên đăng nhập hoặc mật khẩu quản trị không chính xác.' });
         }
 
-        if (typeof this.adminService.verifyAdminTotp === 'function') {
+        const mfaEnabled = typeof this.adminService.getAdminMfaStatus === 'function'
+          ? (await this.adminService.getAdminMfaStatus()).enabled
+          : Boolean(config.adminTotpSecret);
+
+        if (mfaEnabled && typeof this.adminService.verifyAdminTotp === 'function') {
           const totpValid = await this.adminService.verifyAdminTotp(req.body?.totpCode);
           if (!totpValid) {
             return reply.status(401).send({ error: 'Mã xác thực 2 bước (TOTP 6 số) không chính xác hoặc bị thiếu.' });
@@ -98,6 +195,46 @@ export class AdminController {
         );
         setAdminSessionCookie(reply, accessToken, ttlSeconds);
         return reply.status(200).send({ ok: true, expiresIn: ttlSeconds });
+      }
+    );
+
+    // Google Sign-In for Admin (/admin-auth)
+    app.post(
+      '/api/v1/admin/auth/google',
+      async (req: FastifyRequest<{ Body: { idToken?: string } }>, reply: FastifyReply) => {
+        const clientIp = req.ip || '127.0.0.1';
+        if (!(await this.adminAuthLimiter.check(`admin_google:${clientIp}`))) {
+          return reply.status(429).send({ error: 'Quá nhiều lần thử đăng nhập quản trị. Vui lòng thử lại sau 15 phút.' });
+        }
+
+        const idToken = req.body?.idToken?.trim();
+        if (!idToken) {
+          return reply.status(400).send({ error: 'Google ID Token bị thiếu.' });
+        }
+
+        let verifiedUser: { sub: string; email: string; name?: string };
+        try {
+          verifiedUser = await this.verifyGoogleIdToken(idToken);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Xác thực Google ID Token thất bại.';
+          return reply.status(401).send({ error: msg });
+        }
+
+        const isAuthorized = await this.adminService.verifyAdminGoogleEmail(verifiedUser.email);
+        if (!isAuthorized) {
+          return reply.status(403).send({
+            error: `Tài khoản Google (${verifiedUser.email}) chưa được liên kết với quyền Super Admin.`,
+          });
+        }
+
+        const ttlSeconds = 900; // 15 minutes
+        const accessToken = JwtUtil.sign(
+          { sub: config.superAdminId, email: verifiedUser.email, role: 'admin' },
+          config.adminJwtSecret,
+          ttlSeconds
+        );
+        setAdminSessionCookie(reply, accessToken, ttlSeconds);
+        return reply.status(200).send({ ok: true, email: verifiedUser.email, expiresIn: ttlSeconds });
       }
     );
 
@@ -562,15 +699,19 @@ export class AdminController {
       }
     );
 
-    // 11. Giao diện Web Quản trị Super Admin (Strict CSP Nonce + Zero inline handlers)
-    app.get('/admin', async (_req, reply) => {
+    // 11. Giao diện Web Quản trị Super Admin (/admin-auth)
+    app.get('/admin-auth', async (_req, reply) => {
       const nonce = crypto.randomBytes(16).toString('base64');
       reply.header(
         'Content-Security-Policy',
-        `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'`
+        `default-src 'self'; script-src 'self' 'nonce-${nonce}' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' https://fonts.gstatic.com; img-src 'self' blob: data: https://lh3.googleusercontent.com; media-src 'self' blob:; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; object-src 'none'; frame-ancestors 'none'`
       );
       reply.type('text/html');
       return reply.send(renderAdminDashboardHtml(nonce));
+    });
+
+    app.get('/admin', async (_req, reply) => {
+      return reply.status(404).send({ error: 'Không tìm thấy trang yêu cầu.' });
     });
   }
 

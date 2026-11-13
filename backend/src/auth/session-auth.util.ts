@@ -269,6 +269,7 @@ export function registerCsrfOriginProtection(app: FastifyInstance): void {
     '/api/v1/auth/reset-password',
     '/api/v1/auth/logout',
     '/api/v1/admin/auth',
+    '/api/v1/admin/auth/google',
   ]);
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {

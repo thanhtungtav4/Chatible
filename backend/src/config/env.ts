@@ -15,6 +15,9 @@ export function buildValidatedConfig(env: NodeJS.ProcessEnv = process.env) {
   const providedMasterKek = env.APP_MASTER_KEK;
   const adminSecret = env.ADMIN_SECRET_TOKEN || '';
   const adminTotpSecret = env.ADMIN_TOTP_SECRET?.trim() || '';
+  const adminUsername = env.ADMIN_USERNAME?.trim() || 'admin';
+  const adminPassword = env.ADMIN_PASSWORD?.trim() || '';
+  const adminGoogleEmail = env.ADMIN_GOOGLE_EMAIL?.trim().toLowerCase() || 'nguyenthanhtung74119@gmail.com';
   const providedDatabaseUrl = env.DATABASE_URL;
 
   const kmsProviderRaw = (env.KMS_PROVIDER?.trim().toLowerCase() || (isProduction ? 'aws-kms' : 'local')) as KmsProviderType;
@@ -144,6 +147,9 @@ export function buildValidatedConfig(env: NodeJS.ProcessEnv = process.env) {
     masterKek: providedMasterKek || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     adminSecret,
     adminTotpSecret,
+    adminUsername,
+    adminPassword,
+    adminGoogleEmail,
     objectStorage: {
       endpoint: objectStorage.endpoint,
       bucket: objectStorage.bucket,

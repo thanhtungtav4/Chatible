@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import * as OTPAuth from 'otpauth';
 import { db } from '../database/index.js';
@@ -11,6 +12,7 @@ import { auditLogs } from '../database/schema/audit.js';
 import { systemSettings } from '../database/schema/settings.js';
 import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
 import { config } from '../config/env.js';
+import { PasswordUtil } from '../auth/password.util.js';
 import {
   decryptSettingSecret,
   encryptSettingSecret,
@@ -823,7 +825,7 @@ export class AdminService {
     return rows.map((row) => ({
       ...row,
       value:
-        (row.key === 'mail.smtp.password' || row.key === 'admin.mfa.totp_secret') && row.value
+        (row.key === 'mail.smtp.password' || row.key === 'admin.mfa.totp_secret' || row.key === 'admin.auth.password_hash') && row.value
           ? SMTP_PASSWORD_MASK
           : row.value,
     }));
@@ -844,12 +846,20 @@ export class AdminService {
         continue; // Must use dedicated MFA verification flow
       }
       const valueStr = String(rawValue ?? '');
+      if (key === 'admin.auth.password') {
+        if (valueStr === SMTP_PASSWORD_MASK || !valueStr.trim()) {
+          continue;
+        }
+        const hash = PasswordUtil.hash(valueStr.trim());
+        preparedEntries.push({ key: 'admin.auth.password_hash', value: hash, category: 'SECURITY' });
+        continue;
+      }
       if (key === 'mail.smtp.password') {
         if (valueStr === SMTP_PASSWORD_MASK) {
           continue;
         }
         const encrypted = await encryptSettingSecret(valueStr, this.cryptoService);
-        preparedEntries.push({ key, value: encrypted, category: 'MAIL' });
+        preparedEntries.push({ key: 'mail.smtp.password', value: encrypted, category: 'MAIL' });
         continue;
       }
 
@@ -929,22 +939,154 @@ export class AdminService {
   }
 
   private async getStoredTotpSecret(): Promise<{ enabled: boolean; secretBase32: string }> {
-    if (config.adminTotpSecret) {
-      return { enabled: true, secretBase32: config.adminTotpSecret };
-    }
     try {
       const rows = await db
         .select({ key: systemSettings.key, value: systemSettings.value })
         .from(systemSettings)
         .where(inArray(systemSettings.key, ['admin.mfa.enabled', 'admin.mfa.totp_secret']));
       const map = new Map(rows.map((r) => [r.key, r.value]));
-      const enabled = map.get('admin.mfa.enabled') === 'true';
-      const raw = map.get('admin.mfa.totp_secret') || '';
-      if (!enabled || !raw) return { enabled: false, secretBase32: '' };
-      const secretBase32 = await decryptSettingSecret(raw, this.cryptoService);
-      return { enabled: Boolean(secretBase32), secretBase32 };
+      if (map.has('admin.mfa.enabled')) {
+        const enabled = map.get('admin.mfa.enabled') === 'true';
+        if (!enabled) return { enabled: false, secretBase32: '' };
+        const raw = map.get('admin.mfa.totp_secret') || '';
+        if (raw) {
+          const secretBase32 = await decryptSettingSecret(raw, this.cryptoService);
+          return { enabled: Boolean(secretBase32), secretBase32 };
+        }
+        if (config.adminTotpSecret) {
+          return { enabled: true, secretBase32: config.adminTotpSecret };
+        }
+        return { enabled: false, secretBase32: '' };
+      }
     } catch {
-      return { enabled: false, secretBase32: '' };
+      // fallback to env
+    }
+    if (config.adminTotpSecret) {
+      return { enabled: true, secretBase32: config.adminTotpSecret };
+    }
+    return { enabled: false, secretBase32: '' };
+  }
+
+  async getAdminAuthSettings(): Promise<{ username: string; passwordConfigured: boolean; googleEmail: string }> {
+    let username = config.adminUsername || 'admin';
+    let passwordConfigured = Boolean(config.adminPassword || config.adminSecret);
+    let googleEmail = config.adminGoogleEmail || 'nguyenthanhtung74119@gmail.com';
+
+    try {
+      const rows = await db
+        .select({ key: systemSettings.key, value: systemSettings.value })
+        .from(systemSettings)
+        .where(inArray(systemSettings.key, ['admin.auth.username', 'admin.auth.password_hash', 'admin.google.email']));
+      const map = new Map(rows.map((r) => [r.key, r.value]));
+      if (map.get('admin.auth.username')) username = map.get('admin.auth.username')!;
+      if (map.get('admin.auth.password_hash')) passwordConfigured = true;
+      if (map.get('admin.google.email')) googleEmail = map.get('admin.google.email')!;
+    } catch {
+      // ignore
+    }
+    return { username, passwordConfigured, googleEmail };
+  }
+
+  async verifyAdminCredentials(
+    candidateUsername?: string,
+    candidatePassword?: string,
+    candidateSecret?: string
+  ): Promise<boolean> {
+    const trimmedUser = (candidateUsername || '').trim();
+    const trimmedPass = candidatePassword || '';
+    const trimmedSecret = candidateSecret || '';
+
+    let storedUsername = config.adminUsername || 'admin';
+    let storedPasswordHash = '';
+    try {
+      const rows = await db
+        .select({ key: systemSettings.key, value: systemSettings.value })
+        .from(systemSettings)
+        .where(inArray(systemSettings.key, ['admin.auth.username', 'admin.auth.password_hash']));
+      const map = new Map(rows.map((r) => [r.key, r.value]));
+      if (map.get('admin.auth.username')) storedUsername = map.get('admin.auth.username')!;
+      if (map.get('admin.auth.password_hash')) storedPasswordHash = map.get('admin.auth.password_hash')!;
+    } catch {}
+
+    // 1. Check Username + Password
+    if (trimmedUser && trimmedPass) {
+      if (trimmedUser.toLowerCase() !== storedUsername.toLowerCase()) {
+        return false;
+      }
+      if (storedPasswordHash && PasswordUtil.verify(trimmedPass, storedPasswordHash)) {
+        return true;
+      }
+      if (config.adminPassword) {
+        const passBuf = Buffer.from(config.adminPassword);
+        const candBuf = Buffer.from(trimmedPass);
+        if (passBuf.length === candBuf.length && timingSafeEqual(passBuf, candBuf)) return true;
+      }
+      if (config.adminSecret) {
+        const secBuf = Buffer.from(config.adminSecret);
+        const candBuf = Buffer.from(trimmedPass);
+        if (secBuf.length === candBuf.length && timingSafeEqual(secBuf, candBuf)) return true;
+      }
+      return false;
+    }
+
+    // 2. Check secret token or password-only fallback
+    const candidate = trimmedSecret || trimmedPass;
+    if (candidate) {
+      if (config.adminSecret) {
+        const secBuf = Buffer.from(config.adminSecret);
+        const candBuf = Buffer.from(candidate);
+        if (secBuf.length === candBuf.length && timingSafeEqual(secBuf, candBuf)) return true;
+      }
+      if (config.adminPassword) {
+        const passBuf = Buffer.from(config.adminPassword);
+        const candBuf = Buffer.from(candidate);
+        if (passBuf.length === candBuf.length && timingSafeEqual(passBuf, candBuf)) return true;
+      }
+      if (storedPasswordHash && PasswordUtil.verify(candidate, storedPasswordHash)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async verifyAdminGoogleEmail(email: string): Promise<boolean> {
+    if (!email) return false;
+    const cleanEmail = email.trim().toLowerCase();
+
+    let allowedEmails = (config.adminGoogleEmail || 'nguyenthanhtung74119@gmail.com')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    try {
+      const [setting] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, 'admin.google.email'))
+        .limit(1);
+      if (setting?.value) {
+        const dbEmails = setting.value
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        if (dbEmails.length > 0) allowedEmails = dbEmails;
+      }
+    } catch {}
+
+    return allowedEmails.includes(cleanEmail);
+  }
+
+  async getGoogleClientId(): Promise<string> {
+    try {
+      const [setting] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, 'auth.google.client_id'))
+        .limit(1);
+      return setting?.value?.trim() || config.googleClientId || '';
+    } catch {
+      return config.googleClientId || '';
     }
   }
 
