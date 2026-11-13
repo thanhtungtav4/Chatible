@@ -72,7 +72,9 @@ export function buildValidatedConfig(env: NodeJS.ProcessEnv = process.env) {
     }
   }
   if (isProduction && !hasCompleteStorageConfig) {
-    throw new Error('FATAL: S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY are required in production.');
+    if (env.ALLOW_MOCK_STORAGE_IN_PRODUCTION !== 'true') {
+      throw new Error('FATAL: S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY are required in production.');
+    }
   }
   if (providedJwtSecret && (Buffer.byteLength(providedJwtSecret, 'utf8') < 32 || isPlaceholder(providedJwtSecret))) {
     throw new Error('FATAL: JWT_SECRET must be a non-placeholder secret with at least 32 bytes.');
