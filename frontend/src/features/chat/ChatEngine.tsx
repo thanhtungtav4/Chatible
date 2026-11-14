@@ -680,7 +680,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
 
             <div className="my-4 border-t border-slate-200/60" />
 
-            {/* Age Range Slider */}
+            {/* Age Range Slider & Quick Presets */}
             <div>
               <div className="flex items-center justify-between">
                 <label htmlFor={ageSliderId} className="text-xs font-bold text-slate-800">Khoảng tuổi tối đa</label>
@@ -688,7 +688,32 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                   18 – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
                 </span>
               </div>
-              <div className="mt-3 px-1">
+              {/* Quick Age Presets */}
+              <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                {[
+                  { label: '18–25t', val: 25 },
+                  { label: '18–30t', val: 30 },
+                  { label: '18–40t', val: 40 },
+                  { label: 'Tất cả 50+', val: 50 },
+                ].map((preset) => (
+                  <button
+                    key={preset.val}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setAgeMax(preset.val);
+                    }}
+                    className={`shrink-0 rounded-xl px-2.5 py-1 text-[11px] font-bold transition active:scale-95 ${
+                      ageMax === preset.val
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-white text-slate-600 border border-slate-200/90 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 px-1">
                 <input
                   id={ageSliderId}
                   type="range"
@@ -782,8 +807,12 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
             )
           )}
           <button
-            onClick={handleCancelMatching}
-            className="mt-6 text-xs font-semibold text-rose-500 hover:underline"
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              handleCancelMatching();
+            }}
+            className="mt-6 inline-flex min-h-[44px] items-center justify-center rounded-full border border-rose-200 bg-rose-50/80 px-6 py-2.5 text-xs font-bold text-rose-600 shadow-xs transition hover:bg-rose-100 active:scale-95"
           >
             Hủy tìm kiếm
           </button>
@@ -793,7 +822,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       {(chatState === 'CHATTING' || chatState === 'RECONNECTING' || chatState === 'ENDED') && (
         <div className="flex flex-1 flex-col justify-between overflow-hidden">
           <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3 py-2.5">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <button
                 type="button"
                 onClick={handleBackToIdle}
@@ -803,47 +832,48 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               >
                 <ArrowLeft size={16} />
               </button>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{partner?.nickname.slice(0, 2) || 'MT'}</div>
-              <div className="min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-extrabold text-white shadow-xs">
+                {(partner?.nickname || 'MT').slice(0, 2).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-slate-800 truncate">{partner?.nickname || 'Người lạ'}</span>
-                  <span className="shrink-0 rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-500">{partner?.gender === 'FEMALE' ? 'Nữ' : 'Nam'} • {partner?.age ?? '—'}t</span>
+                  <span className="text-xs font-bold text-slate-900 truncate max-w-[85px] sm:max-w-[120px]">
+                    {partner?.nickname || 'Người lạ'}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-500">
+                    {partner?.gender === 'FEMALE' ? 'Nữ' : 'Nam'} • {partner?.age ?? '—'}t
+                  </span>
                   {isAlreadyFriend && (
-                    <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.2 text-[10px] font-bold text-emerald-600">
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600">
                       Bạn bè
                     </span>
                   )}
                 </div>
-                <span className={`text-[10px] font-medium ${
+                <span className={`flex items-center gap-1 text-[10px] font-medium ${
                   chatState === 'CHATTING' ? 'text-emerald-600' : chatState === 'RECONNECTING' ? 'text-amber-600' : 'text-slate-400'
                 }`}>
-                  ● {chatState === 'CHATTING' ? 'Đang trò chuyện' : chatState === 'RECONNECTING' ? 'Đang gián đoạn kết nối' : 'Đã kết thúc'}
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    chatState === 'CHATTING' ? 'bg-emerald-500' : chatState === 'RECONNECTING' ? 'bg-amber-500 animate-pulse' : 'bg-slate-300'
+                  }`} />
+                  {chatState === 'CHATTING' ? 'Đang trò chuyện' : chatState === 'RECONNECTING' ? 'Mất kết nối…' : 'Đã kết thúc'}
                 </span>
               </div>
             </div>
-            {chatState === 'ENDED' && (
-              <button
-                type="button"
-                onClick={handleBackToIdle}
-                className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200 transition active:scale-95"
-              >
-                Về tìm bạn
-              </button>
-            )}
             {(chatState === 'CHATTING' || chatState === 'RECONNECTING') && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={sessionMedia.handleConsentToggle}
                   disabled={sessionMedia.mediaBusy}
                   title={sessionMedia.mediaConsent ? 'Đang bật nhận ảnh/video' : 'Bật/tắt quyền nhận media'}
-                  className={`relative rounded-full p-2 transition ${
+                  aria-label="Quyền nhận media"
+                  className={`relative rounded-full p-2 transition active:scale-95 ${
                     sessionMedia.mediaConsent ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                   }`}
                 >
                   <ShieldCheck size={16} />
                   {sessionMedia.mediaConsent && (
-                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-500 shadow-sm" />
+                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-500 shadow-xs" />
                   )}
                 </button>
                 <button
@@ -852,27 +882,36 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                   disabled={sessionMedia.mediaBusy}
                   aria-pressed={sessionMedia.myAdultConsent}
                   title={sessionMedia.myAdultConsent ? 'Đang bật nhận nội dung 18+' : 'Bật/tắt nhận nội dung 18+'}
-                  className={`relative rounded-full p-2 transition ${
+                  aria-label="Quyền nhận nội dung 18+"
+                  className={`relative rounded-full p-2 transition active:scale-95 ${
                     sessionMedia.myAdultConsent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                   }`}
                 >
                   <Flame size={16} />
                   {sessionMedia.myAdultConsent && (
-                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500 shadow-sm" />
+                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500 shadow-xs" />
                   )}
                 </button>
                 <button
                   type="button"
-                  onClick={handleNextChat}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    handleNextChat();
+                  }}
                   title="Chuyển người khác"
+                  aria-label="Chuyển người khác"
                   className="rounded-full bg-slate-100 p-2 text-slate-600 transition hover:bg-slate-200 active:scale-95"
                 >
                   <RefreshCw size={16} />
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowEndConfirm(true)}
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    setShowEndConfirm(true);
+                  }}
                   title="Kết thúc chat"
+                  aria-label="Kết thúc chat"
                   className="rounded-full bg-rose-50 p-2 text-rose-600 transition hover:bg-rose-100 active:scale-95"
                 >
                   <AlertTriangle size={16} />
@@ -905,9 +944,50 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               onScroll={handleMessagesScroll}
               className="flex-1 space-y-3 overflow-y-auto p-4"
             >
+              {/* Icebreaker starter greeting card when chat has 0 messages */}
+              {messages.length === 0 && chatState === 'CHATTING' && (
+                <div className="my-auto flex flex-col items-center justify-center py-6 px-3 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20">
+                    <Sparkles size={28} />
+                  </div>
+                  <h3 className="mt-3.5 text-sm font-bold text-slate-800">
+                    Đã kết nối với {partner?.nickname || 'Người lạ'}!
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500 max-w-[260px] leading-relaxed">
+                    Đối phương là {partner?.gender === 'FEMALE' ? 'Nữ' : partner?.gender === 'MALE' ? 'Nam' : 'Khác'}, {partner?.age ?? 20} tuổi. Hãy gửi lời chào đầu tiên!
+                  </p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2 max-w-[320px]">
+                    {[
+                      '👋 Chào bạn!',
+                      '✨ Hôm nay bạn thế nào?',
+                      '🎵 Bạn thích nghe nhạc gì?',
+                      '☕ Đang làm gì đó bạn ơi?',
+                    ].map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setInputMessage(prompt);
+                        }}
+                        className="rounded-full border border-blue-200/80 bg-blue-50/80 px-3 py-1.5 text-xs font-semibold text-blue-700 shadow-xs transition hover:bg-blue-100 hover:border-blue-300 active:scale-95"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {messages.map((message) => (
                 <div key={message.id} className={`flex flex-col ${message.sender === 'me' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-xs message-selectable ${message.sender === 'me' ? 'bg-blue-600 text-white shadow-sm' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
+                  <div
+                    className={`max-w-[80%] px-3.5 py-2.5 text-xs message-selectable ${
+                      message.sender === 'me'
+                        ? 'rounded-2xl rounded-br-xs bg-blue-600 text-white shadow-xs'
+                        : 'rounded-2xl rounded-bl-xs border border-slate-200/70 bg-slate-100 text-slate-900 shadow-xs'
+                    }`}
+                  >
                     {message.media ? (
                       <MediaAttachmentPreview
                         title={message.text}
@@ -930,7 +1010,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                       />
                     ) : message.text}
                   </div>
-                  <span className="mt-0.5 px-1 text-[9px] text-slate-400">{message.time}</span>
+                  <span className="mt-0.5 px-1 text-[9.5px] font-medium text-slate-400">{message.time}</span>
                 </div>
               ))}
               <div ref={messagesEndRef} />

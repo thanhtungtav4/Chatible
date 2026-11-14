@@ -37,6 +37,7 @@ export default function App() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isStealthLocked, setIsStealthLocked] = useState(false);
   const [chatResetTrigger, setChatResetTrigger] = useState(0);
+  const [incomingRequestsCount, setIncomingRequestsCount] = useState(0);
   const notifDialogRef = useRef<HTMLDialogElement>(null);
   const notifHeadingId = useId();
   const knownNotifIdsRef = useRef<Set<string> | null>(null);
@@ -92,6 +93,19 @@ export default function App() {
     }
   }, [isNotifOpen, userProfile]);
 
+  const loadIncomingRequestsCount = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/v1/friends/requests');
+      if (!res.ok) return;
+      const data = (await res.json()) as { requests?: unknown[] };
+      if (Array.isArray(data.requests)) {
+        setIncomingRequestsCount(data.requests.length);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const loadNotifications = useCallback(async () => {
     try {
       const res = await apiFetch('/api/v1/notifications');
@@ -144,6 +158,7 @@ export default function App() {
         if (resolved) {
           void syncStealthState();
           void loadNotifications();
+          void loadIncomingRequestsCount();
         }
       })
       .catch(() => {
@@ -156,7 +171,7 @@ export default function App() {
     return () => {
       isCurrent = false;
     };
-  }, [loadNotifications]);
+  }, [loadIncomingRequestsCount, loadNotifications]);
 
   const isAuthenticated = Boolean(userProfile);
 
@@ -165,6 +180,7 @@ export default function App() {
     setActiveTab('chat');
     void syncStealthState();
     void loadNotifications();
+    void loadIncomingRequestsCount();
   };
 
   const handleProfileUpdate = (updated: UserProfile) => {
@@ -221,7 +237,8 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#e2e8f0] p-0 md:p-6">
       <div className="relative flex h-[100dvh] w-full max-w-[420px] flex-col overflow-hidden bg-white shadow-2xl md:h-[860px] md:rounded-[48px] md:border-[10px] md:border-[#1e293b]">
-        <div aria-hidden="true" className="pointer-events-none hidden md:block absolute left-1/2 top-3 z-50 h-7 w-28 -translate-x-1/2 rounded-full bg-black" />
+        {/* Sleek punch-hole camera dot for desktop preview frame */}
+        <div aria-hidden="true" className="pointer-events-none hidden md:block absolute left-1/2 top-3 z-50 h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-slate-900 ring-2 ring-slate-800/80 shadow-inner" />
 
         {/* Màn hình Ngụy trang Toàn diện (Ghi chú an toàn) khi bật Stealth Mode & tắt màn hình / chuyển tab */}
         {isStealthLocked && getLocalStealthMode() && userProfile && (
@@ -304,9 +321,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveTab('profile')}
-                className="inline-flex min-h-[44px] items-center rounded-full bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-700"
+                className="inline-flex min-h-[44px] max-w-[125px] items-center gap-1 rounded-full bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 active:scale-95"
               >
-                {userProfile.nickname} · {userProfile.age}t
+                <span className="truncate">{userProfile.nickname}</span>
+                <span className="shrink-0 text-emerald-600/80">· {userProfile.age}t</span>
               </button>
             </div>
           ) : (
@@ -328,7 +346,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsAuthOpen(true)}
-                className="inline-flex min-h-[44px] items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white"
+                className="inline-flex min-h-[44px] items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 shadow-sm"
               >
                 Đăng nhập
               </button>
@@ -336,7 +354,7 @@ export default function App() {
           )}
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 py-2">
+        <main className={`flex-1 min-h-0 flex flex-col ${activeTab === 'chat' ? 'overflow-hidden p-0' : 'overflow-y-auto px-4 py-2'}`}>
           {isAuthChecking ? (
             <section className="flex h-full items-center justify-center text-xs text-slate-400">
               Đang kiểm tra phiên đăng nhập bảo mật…
@@ -457,21 +475,74 @@ export default function App() {
               }
             }}
             aria-current={activeTab === 'chat' ? 'page' : undefined}
-            className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'chat' ? 'text-blue-600' : 'text-slate-400'}`}
+            className="flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[10px] transition active:scale-95"
           >
-            <MessageSquare size={18} aria-hidden="true" /><span>Chat</span>
+            <div className={`flex items-center justify-center rounded-full px-3 py-1 transition ${activeTab === 'chat' ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+              <MessageSquare size={18} aria-hidden="true" className={activeTab === 'chat' ? 'stroke-[2.3]' : 'stroke-[1.8]'} />
+            </div>
+            <span className={`tracking-tight ${activeTab === 'chat' ? 'font-bold text-blue-600' : 'font-medium text-slate-400'}`}>Chat</span>
           </button>
-          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('friends'); }} aria-current={activeTab === 'friends' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'friends' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <UsersRound size={18} aria-hidden="true" /><span>Bạn bè</span>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setActiveTab('friends');
+              void loadIncomingRequestsCount();
+            }}
+            aria-current={activeTab === 'friends' ? 'page' : undefined}
+            className="relative flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[10px] transition active:scale-95"
+          >
+            <div className={`relative flex items-center justify-center rounded-full px-3 py-1 transition ${activeTab === 'friends' ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+              <UsersRound size={18} aria-hidden="true" className={activeTab === 'friends' ? 'stroke-[2.3]' : 'stroke-[1.8]'} />
+              {incomingRequestsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white shadow-xs animate-in zoom-in-75">
+                  {incomingRequestsCount > 9 ? '9+' : incomingRequestsCount}
+                </span>
+              )}
+            </div>
+            <span className={`tracking-tight ${activeTab === 'friends' ? 'font-bold text-blue-600' : 'font-medium text-slate-400'}`}>Bạn bè</span>
           </button>
-          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('groups'); }} aria-current={activeTab === 'groups' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'groups' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <MessagesSquare size={18} aria-hidden="true" /><span>Nhóm</span>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setActiveTab('groups');
+            }}
+            aria-current={activeTab === 'groups' ? 'page' : undefined}
+            className="flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[10px] transition active:scale-95"
+          >
+            <div className={`flex items-center justify-center rounded-full px-3 py-1 transition ${activeTab === 'groups' ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+              <MessagesSquare size={18} aria-hidden="true" className={activeTab === 'groups' ? 'stroke-[2.3]' : 'stroke-[1.8]'} />
+            </div>
+            <span className={`tracking-tight ${activeTab === 'groups' ? 'font-bold text-blue-600' : 'font-medium text-slate-400'}`}>Nhóm</span>
           </button>
-          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('recent'); }} aria-current={activeTab === 'recent' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'recent' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <Clock3 size={18} aria-hidden="true" /><span>Gần đây</span>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setActiveTab('recent');
+            }}
+            aria-current={activeTab === 'recent' ? 'page' : undefined}
+            className="flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[10px] transition active:scale-95"
+          >
+            <div className={`flex items-center justify-center rounded-full px-3 py-1 transition ${activeTab === 'recent' ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+              <Clock3 size={18} aria-hidden="true" className={activeTab === 'recent' ? 'stroke-[2.3]' : 'stroke-[1.8]'} />
+            </div>
+            <span className={`tracking-tight ${activeTab === 'recent' ? 'font-bold text-blue-600' : 'font-medium text-slate-400'}`}>Gần đây</span>
           </button>
-          <button type="button" onClick={() => { triggerHaptic('light'); setActiveTab('profile'); }} aria-current={activeTab === 'profile' ? 'page' : undefined} className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition active:scale-95 ${activeTab === 'profile' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <User size={18} aria-hidden="true" /><span>Hồ sơ</span>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setActiveTab('profile');
+            }}
+            aria-current={activeTab === 'profile' ? 'page' : undefined}
+            className="flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[10px] transition active:scale-95"
+          >
+            <div className={`flex items-center justify-center rounded-full px-3 py-1 transition ${activeTab === 'profile' ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+              <User size={18} aria-hidden="true" className={activeTab === 'profile' ? 'stroke-[2.3]' : 'stroke-[1.8]'} />
+            </div>
+            <span className={`tracking-tight ${activeTab === 'profile' ? 'font-bold text-blue-600' : 'font-medium text-slate-400'}`}>Hồ sơ</span>
           </button>
         </nav>
 

@@ -486,12 +486,19 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
             >
               <ArrowLeft size={18} />
             </button>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700">
+            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 font-bold text-white shadow-xs">
               {initials(selectedFriend.nickname)}
+              <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white ${selectedFriend.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} />
             </div>
             <div className="min-w-0">
-              <h1 id="friend-chat-title" className="truncate text-base font-bold text-slate-900">{selectedFriend.nickname}</h1>
-              <p className="text-xs text-slate-500">{selectedFriend.age} tuổi · {selectedFriend.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}</p>
+              <h1 id="friend-chat-title" className="truncate text-sm font-bold text-slate-900">{selectedFriend.nickname}</h1>
+              <p className="flex items-center gap-1 text-[11px] text-slate-500">
+                <span>{selectedFriend.age} tuổi</span>
+                <span>•</span>
+                <span className={selectedFriend.isOnline ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
+                  {selectedFriend.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}
+                </span>
+              </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -592,7 +599,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                 : '';
               return (
                 <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm message-selectable ${isMine ? 'rounded-br-md bg-blue-600 text-white' : 'rounded-bl-md bg-slate-100 text-slate-800'}`}>
+                  <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm message-selectable ${isMine ? 'rounded-br-xs bg-blue-600 text-white shadow-xs' : 'rounded-bl-xs border border-slate-200/70 bg-slate-100 text-slate-800 shadow-xs'}`}>
                     {media ? (
                       <MediaAttachmentPreview
                         title={mediaLabel}
