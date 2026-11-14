@@ -253,11 +253,13 @@ export class FriendsService {
         .returning({ id: friendRequests.id });
       if (!acceptedRequest) throw new Error('Lời mời đã được xử lý.');
 
+      const u1 = request.fromUserId < recipientId ? request.fromUserId : recipientId;
+      const u2 = request.fromUserId < recipientId ? recipientId : request.fromUserId;
       await tx
         .insert(friendships)
         .values({
-          user1Id: request.fromUserId,
-          user2Id: recipientId,
+          user1Id: u1,
+          user2Id: u2,
           status: 'ACCEPTED',
         })
         .onConflictDoNothing();
@@ -442,7 +444,33 @@ export class FriendsService {
         )
       )
       .limit(1);
-    return Boolean(friendship);
+    if (friendship) return true;
+
+    // Check if there is an ACCEPTED friendRequest to auto-heal
+    const [acceptedReq] = await db
+      .select({ id: friendRequests.id })
+      .from(friendRequests)
+      .where(
+        and(
+          eq(friendRequests.status, 'ACCEPTED'),
+          or(
+            and(eq(friendRequests.fromUserId, userA), eq(friendRequests.toUserId, userB)),
+            and(eq(friendRequests.fromUserId, userB), eq(friendRequests.toUserId, userA))
+          )
+        )
+      )
+      .limit(1);
+    if (acceptedReq) {
+      const u1 = userA < userB ? userA : userB;
+      const u2 = userA < userB ? userB : userA;
+      await db
+        .insert(friendships)
+        .values({ user1Id: u1, user2Id: u2, status: 'ACCEPTED' })
+        .onConflictDoNothing();
+      return true;
+    }
+
+    return false;
   }
 
   async getOrCreateFriendSession(
@@ -757,27 +785,35 @@ export class FriendsService {
   }
 
   private async decryptFriendMessages(
-    session: { id: string; userAId: string; userBId: string },
+    sessionMap: Map<string, { id: string; userAId: string; userBId: string }>,
     rows: Array<typeof messages.$inferSelect>
   ): Promise<FriendMessageDto[]> {
     return Promise.all(
-      rows.map(async (message) => ({
-        id: message.id,
-        sessionId: session.id,
-        senderId: message.senderId,
-        receiverId: message.senderId === session.userAId ? session.userBId : session.userAId,
-        messageType: message.messageType as MessageType,
-        content: await this.cryptoService.decrypt({
-          encryptedDek: message.encryptedDek,
-          ciphertext: message.ciphertext,
-          iv: message.iv,
-          authTag: message.authTag,
-        }),
-        metadata: message.metadata,
-        isAdultContent: message.isAdultContent,
-        sentAt: message.acceptedAt.toISOString(),
-        expiresAt: message.expiresAt.toISOString(),
-      }))
+      rows.map(async (message) => {
+        const session = sessionMap.get(message.sessionId);
+        const receiverId = session
+          ? message.senderId === session.userAId
+            ? session.userBId
+            : session.userAId
+          : '';
+        return {
+          id: message.id,
+          sessionId: message.sessionId,
+          senderId: message.senderId,
+          receiverId,
+          messageType: message.messageType as MessageType,
+          content: await this.cryptoService.decrypt({
+            encryptedDek: message.encryptedDek,
+            ciphertext: message.ciphertext,
+            iv: message.iv,
+            authTag: message.authTag,
+          }),
+          metadata: message.metadata,
+          isAdultContent: message.isAdultContent,
+          sentAt: message.acceptedAt.toISOString(),
+          expiresAt: message.expiresAt.toISOString(),
+        };
+      })
     );
   }
 
@@ -798,10 +834,23 @@ export class FriendsService {
     const limit = this.normalizeConversationLimit(options.limit);
     const cursor = options.before ? this.decodeConversationCursor(options.before) : null;
     const now = new Date();
-    const session = await this.findActiveFriendSession(userA, userB, now);
-    if (!session) {
+
+    const sharedSessions = await db
+      .select({ id: chatSessions.id, userAId: chatSessions.userAId, userBId: chatSessions.userBId })
+      .from(chatSessions)
+      .where(
+        or(
+          and(eq(chatSessions.userAId, userA), eq(chatSessions.userBId, userB)),
+          and(eq(chatSessions.userAId, userB), eq(chatSessions.userBId, userA))
+        )
+      );
+
+    if (sharedSessions.length === 0) {
       return { messages: [], nextCursor: null, hasMore: false };
     }
+
+    const sessionIds = sharedSessions.map((s) => s.id);
+    const sessionMap = new Map(sharedSessions.map((s) => [s.id, s]));
 
     const cursorCondition = cursor
       ? or(
@@ -815,8 +864,8 @@ export class FriendsService {
       .from(messages)
       .where(
         cursorCondition
-          ? and(eq(messages.sessionId, session.id), gt(messages.expiresAt, now), cursorCondition)
-          : and(eq(messages.sessionId, session.id), gt(messages.expiresAt, now))
+          ? and(inArray(messages.sessionId, sessionIds), gt(messages.expiresAt, now), cursorCondition)
+          : and(inArray(messages.sessionId, sessionIds), gt(messages.expiresAt, now))
       )
       .orderBy(desc(messages.acceptedAt), desc(messages.id))
       .limit(limit + 1);
@@ -829,7 +878,7 @@ export class FriendsService {
       : null;
 
     return {
-      messages: await this.decryptFriendMessages(session, pageAsc),
+      messages: await this.decryptFriendMessages(sessionMap, pageAsc),
       nextCursor,
       hasMore,
     };
@@ -842,15 +891,26 @@ export class FriendsService {
     }
 
     const now = new Date();
-    const session = await this.findActiveFriendSession(userA, userB, now);
-    if (!session) return [];
+    const sharedSessions = await db
+      .select({ id: chatSessions.id, userAId: chatSessions.userAId, userBId: chatSessions.userBId })
+      .from(chatSessions)
+      .where(
+        or(
+          and(eq(chatSessions.userAId, userA), eq(chatSessions.userBId, userB)),
+          and(eq(chatSessions.userAId, userB), eq(chatSessions.userBId, userA))
+        )
+      );
+    if (sharedSessions.length === 0) return [];
+
+    const sessionIds = sharedSessions.map((s) => s.id);
+    const sessionMap = new Map(sharedSessions.map((s) => [s.id, s]));
 
     const rows = await db
       .select()
       .from(messages)
-      .where(and(eq(messages.sessionId, session.id), gt(messages.expiresAt, now)))
+      .where(and(inArray(messages.sessionId, sessionIds), gt(messages.expiresAt, now)))
       .orderBy(messages.acceptedAt, messages.id);
 
-    return this.decryptFriendMessages(session, rows);
+    return this.decryptFriendMessages(sessionMap, rows);
   }
 }

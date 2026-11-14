@@ -34,6 +34,37 @@ function AudioWaveform({ samples, durationSec }: { samples: number[]; durationSe
 type ChatMessage = { id: string; sender: 'me' | 'partner'; text: string; time: string; media?: MediaMessage };
 type ReportRequest = { sessionId: string; reportedUserId: string; evidenceMessageIds: string[] };
 
+const getAnonStorageKey = (userId: string) => `chatible_active_anon_session_${userId}`;
+
+function loadLocalAnonSession(userId: string) {
+  try {
+    const raw = localStorage.getItem(getAnonStorageKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.sessionId === 'string' && parsed.partner) {
+      return parsed as {
+        sessionId: string;
+        partner: UserPublicProfile;
+        messages: ChatMessage[];
+        chatState: ChatState;
+      };
+    }
+  } catch {}
+  return null;
+}
+
+function saveLocalAnonSession(userId: string, data: { sessionId: string; partner: UserPublicProfile; messages: ChatMessage[]; chatState: ChatState }) {
+  try {
+    localStorage.setItem(getAnonStorageKey(userId), JSON.stringify(data));
+  } catch {}
+}
+
+function clearLocalAnonSession(userId: string) {
+  try {
+    localStorage.removeItem(getAnonStorageKey(userId));
+  } catch {}
+}
+
 interface ChatEngineProps {
   currentUser: {
     id: string;
@@ -48,17 +79,18 @@ interface ChatEngineProps {
 }
 
 export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngineProps) {
-  const [chatState, setChatState] = useState<ChatState>('IDLE');
+  const initialLocal = useRef(loadLocalAnonSession(currentUser.id)).current;
+  const [chatState, setChatState] = useState<ChatState>(initialLocal?.sessionId ? 'CHATTING' : 'IDLE');
   const [targetGender, setTargetGender] = useState<TargetGender>(
     (currentUser.preferredGender as TargetGender) || 'ALL'
   );
   const [ageMax, setAgeMax] = useState<number>(currentUser.preferredAgeMax || 30);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
-  const [partner, setPartner] = useState<UserPublicProfile | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [partner, setPartner] = useState<UserPublicProfile | null>(initialLocal?.partner ?? null);
+  const [sessionId, setSessionId] = useState<string | null>(initialLocal?.sessionId ?? null);
   const [secondsWaiting, setSecondsWaiting] = useState(0);
-  const [reconnectCountdown, setReconnectCountdown] = useState(30);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [reconnectCountdown, setReconnectCountdown] = useState(600);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialLocal?.messages ?? []);
   const [inputMessage, setInputMessage] = useState('');
   const [isFriendRequested, setIsFriendRequested] = useState(false);
   const [isAlreadyFriend, setIsAlreadyFriend] = useState(false);
@@ -83,10 +115,10 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     tailKey: messages[messages.length - 1]?.id ?? null,
   });
   const socketRef = useRef<Socket | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  const partnerRef = useRef<UserPublicProfile | null>(null);
-  const shouldResumeRef = useRef(false);
-  const messagesRef = useRef<ChatMessage[]>([]);
+  const sessionIdRef = useRef<string | null>(initialLocal?.sessionId ?? null);
+  const partnerRef = useRef<UserPublicProfile | null>(initialLocal?.partner ?? null);
+  const shouldResumeRef = useRef(Boolean(initialLocal?.sessionId));
+  const messagesRef = useRef<ChatMessage[]>(messages);
   messagesRef.current = messages;
 
   const emitSocketMediaMessage = useCallback(async ({ media, isAdult }: { media: UploadedSessionMedia; isAdult: boolean }) => {
@@ -171,6 +203,49 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   }, []);
 
   useEffect(() => {
+    let isCurrent = true;
+    void apiFetch('/api/v1/sessions/active')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { activeSession?: { sessionId: string; state: ChatState; partner: UserPublicProfile; messages: ChatMessage[] } | null } | null) => {
+        if (!isCurrent) return;
+        if (data?.activeSession) {
+          const act = data.activeSession;
+          setSessionId(act.sessionId);
+          sessionIdRef.current = act.sessionId;
+          setPartner(act.partner);
+          partnerRef.current = act.partner;
+          if (Array.isArray(act.messages) && act.messages.length > 0) {
+            setMessages(act.messages);
+          }
+          setChatState(act.state === 'RECONNECTING' ? 'RECONNECTING' : 'CHATTING');
+          saveLocalAnonSession(currentUser.id, {
+            sessionId: act.sessionId,
+            partner: act.partner,
+            messages: Array.isArray(act.messages) && act.messages.length > 0 ? act.messages : messagesRef.current,
+            chatState: act.state === 'RECONNECTING' ? 'RECONNECTING' : 'CHATTING',
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentUser.id]);
+
+  useEffect(() => {
+    if (sessionId && partner && (chatState === 'CHATTING' || chatState === 'RECONNECTING')) {
+      saveLocalAnonSession(currentUser.id, {
+        sessionId,
+        partner,
+        messages,
+        chatState,
+      });
+    } else if (chatState === 'IDLE' || chatState === 'ENDED') {
+      clearLocalAnonSession(currentUser.id);
+    }
+  }, [currentUser.id, sessionId, partner, messages, chatState]);
+
+  useEffect(() => {
     if (!partner?.id) {
       setIsAlreadyFriend(false);
       return;
@@ -215,20 +290,28 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     socket.on('disconnect', (reason: string) => {
       if (reason === 'io client disconnect' || !sessionIdRef.current) return;
       shouldResumeRef.current = true;
-      setReconnectCountdown(30);
+      setReconnectCountdown(600);
       setChatState('RECONNECTING');
     });
     socket.on('connect', () => {
       setConnectionError(null);
-      if (!shouldResumeRef.current || !sessionIdRef.current) return;
-      socket.emit(SocketEvents.SESSION_RESUME, { sessionId: sessionIdRef.current }, (ack: { success: boolean; state?: ChatState }) => {
+      const targetSessionId = sessionIdRef.current;
+      if (!targetSessionId) return;
+      socket.emit(SocketEvents.SESSION_RESUME, { sessionId: targetSessionId }, (ack: { success: boolean; state?: ChatState; partner?: UserPublicProfile }) => {
         if (ack?.success) {
           shouldResumeRef.current = false;
+          if (ack.partner) {
+            setPartner(ack.partner);
+            partnerRef.current = ack.partner;
+          }
           setChatState(ack.state === 'RECONNECTING' ? 'RECONNECTING' : 'CHATTING');
         } else {
           shouldResumeRef.current = false;
+          clearLocalAnonSession(currentUser.id);
           sessionIdRef.current = null;
-          setActionError('Không thể khôi phục phiên chat.');
+          partnerRef.current = null;
+          setSessionId(null);
+          setPartner(null);
           setChatState('ENDED');
         }
       });
@@ -402,6 +485,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
 
   const handleCancelMatching = () => {
     socketRef.current?.emit(SocketEvents.MATCHING_CANCEL);
+    clearLocalAnonSession(currentUser.id);
     setChatState('IDLE');
   };
 
@@ -409,13 +493,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     triggerHaptic('light');
     if (chatState === 'WAITING') {
       socketRef.current?.emit(SocketEvents.MATCHING_CANCEL);
+      clearLocalAnonSession(currentUser.id);
       setChatState('IDLE');
       return;
     }
-    if (chatState === 'CHATTING') {
+    if (chatState === 'CHATTING' || chatState === 'RECONNECTING') {
       setShowEndConfirm(true);
       return;
     }
+    clearLocalAnonSession(currentUser.id);
     sessionIdRef.current = null;
     partnerRef.current = null;
     setSessionId(null);
@@ -425,7 +511,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     setIsAlreadyFriend(false);
     sessionMedia.clearAllMediaPreviews();
     setChatState('IDLE');
-  }, [chatState, sessionMedia]);
+  }, [chatState, currentUser.id, sessionMedia]);
 
   const isInitialResetMount = useRef(true);
   useEffect(() => {
@@ -440,7 +526,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     event.preventDefault();
     const socket = socketRef.current;
     const text = inputMessage.trim();
-    if (!text || chatState !== 'CHATTING' || !socket?.connected) return;
+    if (!text || (chatState !== 'CHATTING' && chatState !== 'RECONNECTING') || !socket?.connected) return;
 
     setActionError(null);
     const clientMessageId = crypto.randomUUID();
@@ -461,10 +547,13 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
 
   const handleEndChat = () => {
     setShowEndConfirm(false);
+    clearLocalAnonSession(currentUser.id);
     socketRef.current?.emit(SocketEvents.CHAT_END);
+    setChatState('ENDED');
   };
 
   const handleNextChat = () => {
+    clearLocalAnonSession(currentUser.id);
     socketRef.current?.emit(SocketEvents.CHAT_NEXT, undefined, (ack: { success: boolean }) => {
       if (ack?.success) handleStartMatching();
       else setActionError('Không thể kết thúc phiên hiện tại.');
@@ -705,23 +794,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
         </div>
       )}
 
-      {chatState === 'RECONNECTING' && (
-        <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-          <WifiOff size={32} className="text-amber-500" />
-          <p className="mt-3 text-sm font-semibold text-slate-700">Đang khôi phục kết nối…</p>
-          <span className="mt-1 text-xs text-slate-500">Còn {reconnectCountdown} giây</span>
-        </div>
-      )}
-
-      {(chatState === 'CHATTING' || chatState === 'ENDED') && (
+      {(chatState === 'CHATTING' || chatState === 'RECONNECTING' || chatState === 'ENDED') && (
         <div className="flex flex-1 flex-col justify-between overflow-hidden">
           <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3 py-2.5">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleBackToIdle}
-                title={chatState === 'CHATTING' ? 'Thoát ra trang tìm bạn' : 'Quay về trang tìm bạn mới'}
-                aria-label={chatState === 'CHATTING' ? 'Thoát ra trang tìm bạn' : 'Quay về trang tìm bạn mới'}
+                title={chatState === 'ENDED' ? 'Quay về trang tìm bạn mới' : 'Thoát ra trang tìm bạn'}
+                aria-label={chatState === 'ENDED' ? 'Quay về trang tìm bạn mới' : 'Thoát ra trang tìm bạn'}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition active:scale-95"
               >
                 <ArrowLeft size={16} />
@@ -732,8 +813,10 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                   <span className="text-xs font-bold text-slate-800 truncate">{partner?.nickname || 'Người lạ'}</span>
                   <span className="shrink-0 rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-500">{partner?.gender === 'FEMALE' ? 'Nữ' : 'Nam'} • {partner?.age ?? '—'}t</span>
                 </div>
-                <span className={`text-[10px] font-medium ${chatState === 'CHATTING' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                  ● {chatState === 'CHATTING' ? 'Đang trò chuyện' : 'Đã kết thúc'}
+                <span className={`text-[10px] font-medium ${
+                  chatState === 'CHATTING' ? 'text-emerald-600' : chatState === 'RECONNECTING' ? 'text-amber-600' : 'text-slate-400'
+                }`}>
+                  ● {chatState === 'CHATTING' ? 'Đang trò chuyện' : chatState === 'RECONNECTING' ? 'Đang gián đoạn kết nối' : 'Đã kết thúc'}
                 </span>
               </div>
             </div>
@@ -746,7 +829,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                 Về tìm bạn
               </button>
             )}
-            {chatState === 'CHATTING' && (
+            {(chatState === 'CHATTING' || chatState === 'RECONNECTING') && (
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -796,6 +879,24 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               </div>
             )}
           </div>
+
+          {chatState === 'RECONNECTING' && (
+            <div className="flex items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3.5 py-2 text-xs text-amber-800">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <WifiOff size={15} className="text-amber-600 shrink-0 animate-pulse" />
+                <span className="truncate">
+                  Đối phương tạm rời đi. Đang giữ phiên chờ ({Math.floor(reconnectCountdown / 60)}:{String(reconnectCountdown % 60).padStart(2, '0')})…
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleNextChat}
+                className="shrink-0 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 active:scale-95 transition"
+              >
+                Tìm người mới ngay
+              </button>
+            </div>
+          )}
 
           <div className="relative flex min-h-0 flex-1 flex-col">
             <div
@@ -954,7 +1055,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               ) : (
                 <input
                   type="text"
-                  placeholder="Nhập tin nhắn..."
+                  placeholder={chatState === 'RECONNECTING' ? 'Đối phương tạm rời đi, bạn vẫn có thể để lại tin nhắn...' : 'Nhập tin nhắn...'}
                   value={inputMessage}
                   onChange={(event) => setInputMessage(event.target.value)}
                   onFocus={() => {

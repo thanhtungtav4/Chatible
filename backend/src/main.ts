@@ -212,23 +212,6 @@ async function bootstrap() {
   const adminController = new AdminController(adminService, groupsService);
   adminController.registerRoutes(app);
 
-  // Register Friends, Recent Sessions & Safety Routes
-  const friendsController = new FriendsController(friendsService);
-  friendsController.registerRoutes(app);
-
-  const recentSessionsController = new RecentSessionsController(cryptoService);
-  recentSessionsController.registerRoutes(app);
-
-  const safetyController = new SafetyController(safetyService, notificationService);
-  safetyController.registerRoutes(app);
-
-  // Start automated Data Cleanup Runner (runs on startup, then every hour)
-  const cleanupService = new DataCleanupService(mediaService);
-  void cleanupService.executeCleanup().catch((err) => app.log.error(err, '[DataCleanup Initial Error]'));
-  setInterval(() => {
-    cleanupService.executeCleanup().catch((err) => app.log.error(err, '[DataCleanup Error]'));
-  }, 3600000);
-
   // Bind Socket.io to Fastify server
   const io = new SocketIOServer(app.server, {
     cors: {
@@ -252,6 +235,23 @@ async function bootstrap() {
   );
   const adapterPublisher = new Redis(config.redisUrl, { lazyConnect: true, retryStrategy: () => null });
   const adapterSubscriber = adapterPublisher.duplicate();
+
+  // Register Friends, Recent Sessions & Safety Routes
+  const friendsController = new FriendsController(friendsService);
+  friendsController.registerRoutes(app);
+
+  const recentSessionsController = new RecentSessionsController(cryptoService, sessionCoordinator);
+  recentSessionsController.registerRoutes(app);
+
+  const safetyController = new SafetyController(safetyService, notificationService);
+  safetyController.registerRoutes(app);
+
+  // Start automated Data Cleanup Runner (runs on startup, then every hour)
+  const cleanupService = new DataCleanupService(mediaService);
+  void cleanupService.executeCleanup().catch((err) => app.log.error(err, '[DataCleanup Initial Error]'));
+  setInterval(() => {
+    cleanupService.executeCleanup().catch((err) => app.log.error(err, '[DataCleanup Error]'));
+  }, 3600000);
 
   matchingEngine.setBlockChecker((userA, userB) => safetyService.isBlocked(userA, userB));
   const chatGateway = new ChatGateway(

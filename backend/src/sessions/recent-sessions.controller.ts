@@ -9,9 +9,13 @@ import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
 import { verifyVaultUnlocked } from '../auth/session-auth.util.js';
 import { ApiError, sendApiError } from '../http/api-error.js';
 import { authenticateRequest } from '../http/route-auth.js';
+import type { RedisSessionCoordinator } from '../matching/session.coordinator.js';
 
 export class RecentSessionsController {
-  constructor(private readonly cryptoService?: EnvelopeCryptoService) {}
+  constructor(
+    private readonly cryptoService?: EnvelopeCryptoService,
+    private readonly sessionCoordinator?: RedisSessionCoordinator
+  ) {}
 
   private async assertVaultUnlockedIfEnabled(req: FastifyRequest, userId: string): Promise<void> {
     const profile = await db.query.profiles.findFirst({
@@ -24,6 +28,88 @@ export class RecentSessionsController {
   }
 
   registerRoutes(app: FastifyInstance) {
+    // GET /api/v1/sessions/active (Checks whether user has an active/reconnecting session in Redis)
+    app.get('/api/v1/sessions/active', async (req: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const userId = await authenticateRequest(req, 'active_only');
+        if (!this.sessionCoordinator) {
+          return reply.status(200).send({ activeSession: null });
+        }
+        const session = await this.sessionCoordinator.getSessionByUser(userId);
+        if (!session || session.state === 'ENDED') {
+          return reply.status(200).send({ activeSession: null });
+        }
+
+        const partnerId = session.userAId === userId ? session.userBId : session.userAId;
+        const [partnerProfile] = await db
+          .select({
+            userId: profiles.userId,
+            nickname: profiles.nickname,
+            gender: profiles.gender,
+            calculatedAge: profiles.calculatedAge,
+          })
+          .from(profiles)
+          .where(eq(profiles.userId, partnerId))
+          .limit(1);
+
+        const rawMessages = await db
+          .select()
+          .from(messages)
+          .where(eq(messages.sessionId, session.sessionId))
+          .orderBy(messages.acceptedAt);
+
+        let decryptedMessages: Array<{ id: string; sender: 'me' | 'partner'; text: string; time: string; media?: unknown }> = [];
+        if (this.cryptoService && rawMessages.length > 0) {
+          decryptedMessages = await Promise.all(
+            rawMessages.map(async (m) => {
+              let text = '';
+              try {
+                text = await this.cryptoService!.decrypt({
+                  ciphertext: m.ciphertext,
+                  encryptedDek: m.encryptedDek,
+                  iv: m.iv,
+                  authTag: m.authTag,
+                });
+              } catch {
+                text = '[Không thể giải mã tin nhắn]';
+              }
+              return {
+                id: m.id,
+                sender: (m.senderId === userId ? 'me' : 'partner') as 'me' | 'partner',
+                text,
+                time: new Date(m.acceptedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              };
+            })
+          );
+        }
+
+        return reply.status(200).send({
+          activeSession: {
+            sessionId: session.sessionId,
+            state: session.state,
+            partner: partnerProfile
+              ? {
+                  id: partnerProfile.userId,
+                  nickname: partnerProfile.nickname,
+                  gender: partnerProfile.gender,
+                  age: partnerProfile.calculatedAge,
+                }
+              : {
+                  id: partnerId,
+                  nickname: 'Người lạ',
+                  gender: 'OTHER',
+                  age: 20,
+                },
+            messages: decryptedMessages,
+          },
+        });
+      } catch (err: unknown) {
+        return sendApiError(reply, err, {
+          fallbackStatus: 500,
+          fallbackMessage: 'Lỗi kiểm tra phiên chat hoạt động',
+        });
+      }
+    });
     // GET /api/v1/sessions/recent (Real 7-day sessions from PostgreSQL; enforces Stealth Vault PIN lock on backend)
     app.get('/api/v1/sessions/recent', async (req: FastifyRequest, reply: FastifyReply) => {
       try {

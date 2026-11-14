@@ -49,6 +49,13 @@ interface SocketAcknowledgement {
   success: boolean;
   error?: string;
   state?: string;
+  sessionId?: string;
+  partner?: {
+    id: string;
+    nickname: string;
+    gender: string;
+    age: number;
+  };
   messageId?: string;
   sentAt?: string;
   requestId?: string;
@@ -449,8 +456,8 @@ export class ChatGateway {
           if (ack) ack({ success: false, error: 'Không tìm thấy phiên chat' });
           return;
         }
-        if (coordinatedSession.state !== 'CHATTING') {
-          if (ack) ack({ success: false, error: 'Cuộc trò chuyện đã kết thúc hoặc đang kết nối lại' });
+        if (coordinatedSession.state !== 'CHATTING' && coordinatedSession.state !== 'RECONNECTING') {
+          if (ack) ack({ success: false, error: 'Cuộc trò chuyện đã kết thúc' });
           return;
         }
 
@@ -617,7 +624,7 @@ export class ChatGateway {
           const session = typeof sessionId === 'string'
             ? await this.sessionCoordinator.getSessionByUser(authUser.userId)
             : null;
-          if (!session || session.sessionId !== sessionId || session.state !== 'RECONNECTING') {
+          if (!session || session.sessionId !== sessionId || (session.state !== 'RECONNECTING' && session.state !== 'CHATTING')) {
             ack?.({ success: false, error: 'Phiên chat đã kết thúc hoặc không thể khôi phục.' });
             return;
           }
@@ -629,10 +636,34 @@ export class ChatGateway {
           const partnerUserId = activeSession.userAId === authUser.userId
             ? activeSession.userBId
             : activeSession.userAId;
+
+          const [partnerProfile] = await db
+            .select({
+              userId: profiles.userId,
+              nickname: profiles.nickname,
+              gender: profiles.gender,
+              calculatedAge: profiles.calculatedAge,
+            })
+            .from(profiles)
+            .where(eq(profiles.userId, partnerUserId))
+            .limit(1);
+
           if (restored.state === 'CHATTING') {
             this.io.to(this.userRoom(partnerUserId)).emit(SocketEvents.CONNECTION_RESTORED);
           }
-          ack?.({ success: true, state: restored.state });
+          ack?.({
+            success: true,
+            state: restored.state,
+            sessionId,
+            partner: partnerProfile
+              ? {
+                  id: partnerProfile.userId,
+                  nickname: partnerProfile.nickname,
+                  gender: partnerProfile.gender,
+                  age: partnerProfile.calculatedAge,
+                }
+              : undefined,
+          });
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : 'Phiên chat đã kết thúc hoặc không thể khôi phục.';
           ack?.({ success: false, error: message });
@@ -836,10 +867,11 @@ export class ChatGateway {
     if (!session) return;
 
     const activeSession = this.cacheSession(session);
-    const partnerSocketId = activeSession.userAId === userId
-      ? activeSession.userBSocketId
-      : activeSession.userASocketId;
-    this.io.to(partnerSocketId).emit(SocketEvents.CONNECTION_LOST, { timeoutSec: 30 });
+    const partnerUserId = activeSession.userAId === userId
+      ? activeSession.userBId
+      : activeSession.userAId;
+    const timeoutSec = Math.max(30, Math.round(((session.reconnectUntil ?? Date.now()) - Date.now()) / 1000));
+    this.io.to(this.userRoom(partnerUserId)).emit(SocketEvents.CONNECTION_LOST, { timeoutSec });
   }
 
   private async endActiveSession(sessionId: string, reason: string): Promise<void> {

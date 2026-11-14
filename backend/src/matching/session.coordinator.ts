@@ -145,13 +145,22 @@ export class RedisSessionCoordinator {
   async updateSocket(sessionId: string, userId: string, socketId: string): Promise<CoordinatedSession> {
     return this.withLock(async () => {
       const session = await this.requireSession(sessionId);
-      const deadline = session.reconnectingUsers?.[userId];
-      if (session.state !== 'RECONNECTING' || deadline === undefined || deadline <= Date.now()) {
+      if (session.state === 'ENDED') {
         throw new Error('Chat session is no longer available for reconnect.');
       }
+      if (session.userAId !== userId && session.userBId !== userId) {
+        throw new Error('User is not a participant in this session');
+      }
+      const deadline = session.reconnectingUsers?.[userId];
+      if (deadline !== undefined && deadline <= Date.now()) {
+        throw new Error('Chat session is no longer available for reconnect.');
+      }
+      const currentSocketId = session.userAId === userId ? session.userASocketId : session.userBSocketId;
+      if (deadline === undefined && currentSocketId === socketId) {
+        throw new Error('User is already active in this session.');
+      }
       if (session.userAId === userId) session.userASocketId = socketId;
-      else if (session.userBId === userId) session.userBSocketId = socketId;
-      else throw new Error('User is not a participant in this session');
+      else session.userBSocketId = socketId;
       const reconnectingUsers = { ...session.reconnectingUsers };
       delete reconnectingUsers[userId];
       session.reconnectingUsers = Object.keys(reconnectingUsers).length > 0 ? reconnectingUsers : undefined;
@@ -165,7 +174,7 @@ export class RedisSessionCoordinator {
     });
   }
 
-  async markDisconnected(userId: string, socketId: string): Promise<CoordinatedSession | null> {
+  async markDisconnected(userId: string, socketId: string, graceMs = 600_000): Promise<CoordinatedSession | null> {
     return this.withLock(async () => {
       const sessionId = await this.redis.get(this.userKey(userId));
       if (!sessionId) return null;
@@ -177,7 +186,7 @@ export class RedisSessionCoordinator {
           ? session.userBSocketId
           : null;
       if (currentSocketId !== socketId) return null;
-      const reconnectingUsers = { ...session.reconnectingUsers, [userId]: Date.now() + 30_000 };
+      const reconnectingUsers = { ...session.reconnectingUsers, [userId]: Date.now() + graceMs };
       session.state = 'RECONNECTING';
       session.reconnectingUsers = reconnectingUsers;
       session.reconnectUntil = Math.min(...Object.values(reconnectingUsers));
