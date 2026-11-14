@@ -434,6 +434,19 @@ export class FriendsService {
 
   async isFriend(userA: string, userB: string): Promise<boolean> {
     if (!isUuid(userA) || !isUuid(userB)) return false;
+
+    const [block] = await db
+      .select({ id: blockedUsers.id })
+      .from(blockedUsers)
+      .where(
+        or(
+          and(eq(blockedUsers.blockerId, userA), eq(blockedUsers.blockedId, userB)),
+          and(eq(blockedUsers.blockerId, userB), eq(blockedUsers.blockedId, userA))
+        )
+      )
+      .limit(1);
+    if (block) return false;
+
     const [friendship] = await db
       .select({ id: friendships.id })
       .from(friendships)
@@ -481,22 +494,13 @@ export class FriendsService {
       throw new Error('ID bạn bè không hợp lệ.');
     }
     await this.assertUserActive(userId);
+    if (!(await this.isFriend(userId, friendId))) {
+      throw new Error('Chỉ có bạn bè mới có thể mở luồng trò chuyện 1-1.');
+    }
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     const sessionId = await db.transaction(async (tx) => {
-      const [friendship] = await tx
-        .select({ id: friendships.id })
-        .from(friendships)
-        .where(
-          or(
-            and(eq(friendships.user1Id, userId), eq(friendships.user2Id, friendId)),
-            and(eq(friendships.user1Id, friendId), eq(friendships.user2Id, userId))
-          )
-        )
-        .limit(1);
-      if (!friendship) throw new Error('Chỉ có bạn bè mới có thể mở luồng trò chuyện 1-1.');
-
       const [block] = await tx
         .select({ id: blockedUsers.id })
         .from(blockedUsers)

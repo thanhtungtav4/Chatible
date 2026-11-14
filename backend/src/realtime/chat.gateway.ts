@@ -50,6 +50,7 @@ interface SocketAcknowledgement {
   error?: string;
   state?: string;
   sessionId?: string;
+  isFriend?: boolean;
   partner?: {
     id: string;
     nickname: string;
@@ -637,16 +638,20 @@ export class ChatGateway {
             ? activeSession.userBId
             : activeSession.userAId;
 
-          const [partnerProfile] = await db
-            .select({
-              userId: profiles.userId,
-              nickname: profiles.nickname,
-              gender: profiles.gender,
-              calculatedAge: profiles.calculatedAge,
-            })
-            .from(profiles)
-            .where(eq(profiles.userId, partnerUserId))
-            .limit(1);
+          const [partnerProfile, isFriend] = await Promise.all([
+            db
+              .select({
+                userId: profiles.userId,
+                nickname: profiles.nickname,
+                gender: profiles.gender,
+                calculatedAge: profiles.calculatedAge,
+              })
+              .from(profiles)
+              .where(eq(profiles.userId, partnerUserId))
+              .limit(1)
+              .then(([res]) => res),
+            this.friendsService.isFriend(authUser.userId, partnerUserId),
+          ]);
 
           if (restored.state === 'CHATTING') {
             this.io.to(this.userRoom(partnerUserId)).emit(SocketEvents.CONNECTION_RESTORED);
@@ -655,6 +660,7 @@ export class ChatGateway {
             success: true,
             state: restored.state,
             sessionId,
+            isFriend,
             partner: partnerProfile
               ? {
                   id: partnerProfile.userId,
@@ -807,6 +813,10 @@ export class ChatGateway {
         ownerInstanceId: notification.match.ownerInstanceId,
         state: 'CHATTING',
       });
+      const isFriend = await this.friendsService.isFriend(
+        notification.match.userA.userId,
+        notification.match.userB.userId
+      );
       this.io.local.to(this.userRoom(notification.match.userA.userId)).emit(SocketEvents.MATCHING_FOUND, {
         sessionId: notification.match.sessionId,
         partner: {
@@ -815,6 +825,7 @@ export class ChatGateway {
           gender: notification.match.userB.gender,
           age: notification.match.userB.age,
         },
+        isFriend,
         matchedAt: notification.match.matchedAt,
       });
       this.io.local.to(this.userRoom(notification.match.userB.userId)).emit(SocketEvents.MATCHING_FOUND, {
@@ -825,6 +836,7 @@ export class ChatGateway {
           gender: notification.match.userA.gender,
           age: notification.match.userA.age,
         },
+        isFriend,
         matchedAt: notification.match.matchedAt,
       });
       return;

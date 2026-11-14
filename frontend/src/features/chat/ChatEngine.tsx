@@ -47,13 +47,14 @@ function loadLocalAnonSession(userId: string) {
         partner: UserPublicProfile;
         messages: ChatMessage[];
         chatState: ChatState;
+        isAlreadyFriend?: boolean;
       };
     }
   } catch {}
   return null;
 }
 
-function saveLocalAnonSession(userId: string, data: { sessionId: string; partner: UserPublicProfile; messages: ChatMessage[]; chatState: ChatState }) {
+function saveLocalAnonSession(userId: string, data: { sessionId: string; partner: UserPublicProfile; messages: ChatMessage[]; chatState: ChatState; isAlreadyFriend?: boolean }) {
   try {
     localStorage.setItem(getAnonStorageKey(userId), JSON.stringify(data));
   } catch {}
@@ -92,7 +93,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const [messages, setMessages] = useState<ChatMessage[]>(initialLocal?.messages ?? []);
   const [inputMessage, setInputMessage] = useState('');
   const [isFriendRequested, setIsFriendRequested] = useState(false);
-  const [isAlreadyFriend, setIsAlreadyFriend] = useState(false);
+  const [isAlreadyFriend, setIsAlreadyFriend] = useState<boolean>(Boolean(initialLocal?.isAlreadyFriend));
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -205,7 +206,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     let isCurrent = true;
     void apiFetch('/api/v1/sessions/active')
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { activeSession?: { sessionId: string; state: ChatState; partner: UserPublicProfile; messages: ChatMessage[] } | null } | null) => {
+      .then((data: { activeSession?: { sessionId: string; state: ChatState; partner: UserPublicProfile; messages: ChatMessage[]; isFriend?: boolean } | null } | null) => {
         if (!isCurrent) return;
         if (data?.activeSession) {
           const act = data.activeSession;
@@ -216,12 +217,16 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
           if (Array.isArray(act.messages) && act.messages.length > 0) {
             setMessages(act.messages);
           }
+          if (typeof act.isFriend === 'boolean') {
+            setIsAlreadyFriend(act.isFriend);
+          }
           setChatState(act.state === 'RECONNECTING' ? 'RECONNECTING' : 'CHATTING');
           saveLocalAnonSession(currentUser.id, {
             sessionId: act.sessionId,
             partner: act.partner,
             messages: Array.isArray(act.messages) && act.messages.length > 0 ? act.messages : messagesRef.current,
             chatState: act.state === 'RECONNECTING' ? 'RECONNECTING' : 'CHATTING',
+            isAlreadyFriend: Boolean(act.isFriend),
           });
         }
       })
@@ -238,11 +243,12 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
         partner,
         messages,
         chatState,
+        isAlreadyFriend,
       });
     } else if (chatState === 'IDLE' || chatState === 'ENDED') {
       clearLocalAnonSession(currentUser.id);
     }
-  }, [currentUser.id, sessionId, partner, messages, chatState]);
+  }, [currentUser.id, sessionId, partner, messages, chatState, isAlreadyFriend]);
 
   useEffect(() => {
     if (!partner?.id) {
@@ -296,12 +302,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       setConnectionError(null);
       const targetSessionId = sessionIdRef.current;
       if (!targetSessionId) return;
-      socket.emit(SocketEvents.SESSION_RESUME, { sessionId: targetSessionId }, (ack: { success: boolean; state?: ChatState; partner?: UserPublicProfile }) => {
+      socket.emit(SocketEvents.SESSION_RESUME, { sessionId: targetSessionId }, (ack: { success: boolean; state?: ChatState; partner?: UserPublicProfile; isFriend?: boolean }) => {
         if (ack?.success) {
           shouldResumeRef.current = false;
           if (ack.partner) {
             setPartner(ack.partner);
             partnerRef.current = ack.partner;
+          }
+          if (typeof ack.isFriend === 'boolean') {
+            setIsAlreadyFriend(ack.isFriend);
           }
           setChatState(ack.state === 'RECONNECTING' ? 'RECONNECTING' : 'CHATTING');
         } else {
@@ -316,12 +325,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       });
     });
 
-    socket.on(SocketEvents.MATCHING_FOUND, (result: { sessionId: string; partner: UserPublicProfile }) => {
+    socket.on(SocketEvents.MATCHING_FOUND, (result: { sessionId: string; partner: UserPublicProfile; isFriend?: boolean }) => {
       sessionIdRef.current = result.sessionId;
       partnerRef.current = result.partner;
       shouldResumeRef.current = false;
       setSessionId(result.sessionId);
       setPartner(result.partner);
+      if (typeof result.isFriend === 'boolean') {
+        setIsAlreadyFriend(result.isFriend);
+      }
       setChatState('CHATTING');
       triggerHaptic('success');
 
@@ -796,6 +808,11 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-bold text-slate-800 truncate">{partner?.nickname || 'Người lạ'}</span>
                   <span className="shrink-0 rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-500">{partner?.gender === 'FEMALE' ? 'Nữ' : 'Nam'} • {partner?.age ?? '—'}t</span>
+                  {isAlreadyFriend && (
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.2 text-[10px] font-bold text-emerald-600">
+                      Bạn bè
+                    </span>
+                  )}
                 </div>
                 <span className={`text-[10px] font-medium ${
                   chatState === 'CHATTING' ? 'text-emerald-600' : chatState === 'RECONNECTING' ? 'text-amber-600' : 'text-slate-400'

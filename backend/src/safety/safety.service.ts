@@ -199,6 +199,18 @@ const persistReport: ReportPersistence = async (record) => {
         )
       )
     );
+    await tx.delete(friendRequests).where(
+      or(
+        and(
+          eq(friendRequests.fromUserId, canonicalRecord.reporterId),
+          eq(friendRequests.toUserId, canonicalRecord.reportedUserId)
+        ),
+        and(
+          eq(friendRequests.fromUserId, canonicalRecord.reportedUserId),
+          eq(friendRequests.toUserId, canonicalRecord.reporterId)
+        )
+      )
+    );
 
 
     return canonicalRecord;

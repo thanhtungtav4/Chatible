@@ -3,7 +3,7 @@ import { db } from '../database/index.js';
 import { chatSessions } from '../database/schema/sessions.js';
 import { profiles } from '../database/schema/users.js';
 import { messages } from '../database/schema/messages.js';
-import { friendships } from '../database/schema/friends.js';
+import { friendships, friendRequests } from '../database/schema/friends.js';
 import { eq, or, and, desc, sql, gt, isNotNull, inArray } from 'drizzle-orm';
 import { EnvelopeCryptoService } from '../crypto/envelope.service.js';
 import { verifyVaultUnlocked } from '../auth/session-auth.util.js';
@@ -41,16 +41,41 @@ export class RecentSessionsController {
         }
 
         const partnerId = session.userAId === userId ? session.userBId : session.userAId;
-        const [partnerProfile] = await db
-          .select({
-            userId: profiles.userId,
-            nickname: profiles.nickname,
-            gender: profiles.gender,
-            calculatedAge: profiles.calculatedAge,
-          })
-          .from(profiles)
-          .where(eq(profiles.userId, partnerId))
-          .limit(1);
+        const [[partnerProfile], [friendship], [acceptedReq]] = await Promise.all([
+          db
+            .select({
+              userId: profiles.userId,
+              nickname: profiles.nickname,
+              gender: profiles.gender,
+              calculatedAge: profiles.calculatedAge,
+            })
+            .from(profiles)
+            .where(eq(profiles.userId, partnerId))
+            .limit(1),
+          db
+            .select({ id: friendships.id })
+            .from(friendships)
+            .where(
+              or(
+                and(eq(friendships.user1Id, userId), eq(friendships.user2Id, partnerId)),
+                and(eq(friendships.user1Id, partnerId), eq(friendships.user2Id, userId))
+              )
+            )
+            .limit(1),
+          db
+            .select({ id: friendRequests.id })
+            .from(friendRequests)
+            .where(
+              and(
+                eq(friendRequests.status, 'ACCEPTED'),
+                or(
+                  and(eq(friendRequests.fromUserId, userId), eq(friendRequests.toUserId, partnerId)),
+                  and(eq(friendRequests.toUserId, userId), eq(friendRequests.fromUserId, partnerId))
+                )
+              )
+            )
+            .limit(1),
+        ]);
 
         const rawMessages = await db
           .select()
@@ -87,6 +112,7 @@ export class RecentSessionsController {
           activeSession: {
             sessionId: session.sessionId,
             state: session.state,
+            isFriend: Boolean(friendship || acceptedReq),
             partner: partnerProfile
               ? {
                   id: partnerProfile.userId,
@@ -142,7 +168,7 @@ export class RecentSessionsController {
         );
         const sessionIds = rows.map((s) => s.id);
 
-        const [partnerProfiles, messageCounts, activeFriendships] = await Promise.all([
+        const [partnerProfiles, messageCounts, activeFriendships, acceptedRequests] = await Promise.all([
           partnerIds.length > 0
             ? db
                 .select({
@@ -178,11 +204,29 @@ export class RecentSessionsController {
                   )
                 )
             : Promise.resolve([]),
+          partnerIds.length > 0
+            ? db
+                .select({
+                  fromUserId: friendRequests.fromUserId,
+                  toUserId: friendRequests.toUserId,
+                })
+                .from(friendRequests)
+                .where(
+                  and(
+                    eq(friendRequests.status, 'ACCEPTED'),
+                    or(
+                      and(eq(friendRequests.fromUserId, userId), inArray(friendRequests.toUserId, partnerIds)),
+                      and(eq(friendRequests.toUserId, userId), inArray(friendRequests.fromUserId, partnerIds))
+                    )
+                  )
+                )
+            : Promise.resolve([]),
         ]);
 
-        const friendPartnerIdSet = new Set(
-          activeFriendships.map((f) => (f.user1Id === userId ? f.user2Id : f.user1Id))
-        );
+        const friendPartnerIdSet = new Set([
+          ...activeFriendships.map((f) => (f.user1Id === userId ? f.user2Id : f.user1Id)),
+          ...acceptedRequests.map((r) => (r.fromUserId === userId ? r.toUserId : r.fromUserId)),
+        ]);
 
         const profileMap = new Map(partnerProfiles.map((p) => [p.userId, p]));
         const countMap = new Map(messageCounts.map((c) => [c.sessionId, Number(c.count)]));

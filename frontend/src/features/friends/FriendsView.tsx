@@ -273,30 +273,38 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     setHasMoreMessages(false);
     setActiveSessionId(null);
 
-    void Promise.all([
-      apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/session`).then((r) =>
+    const fetchSession = apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/session`)
+      .then((r) =>
         readApi<{ sessionId: string; myAdultConsent: boolean; partnerAdultConsent: boolean }>(r)
-      ),
-      apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/messages?limit=40`).then((r) =>
-        readApi<{ messages?: FriendMessage[]; nextCursor?: string | null; hasMore?: boolean }>(r)
-      ),
-    ])
-      .then(([sessionInfo, data]) => {
+      )
+      .then((sessionInfo) => {
         if (!isCurrent) return;
         setActiveSessionId(sessionInfo.sessionId);
         mediaHandlersRef.current.setMyAdultConsent(sessionInfo.myAdultConsent);
         mediaHandlersRef.current.setPartnerAdultConsent(sessionInfo.partnerAdultConsent);
+      })
+      .catch((err: unknown) => {
+        console.warn('[FriendsView] Could not load friend session:', err);
+      });
+
+    const fetchMessages = apiFetch(`/api/v1/friends/${encodeURIComponent(selectedFriendId)}/messages?limit=40`)
+      .then((r) =>
+        readApi<{ messages?: FriendMessage[]; nextCursor?: string | null; hasMore?: boolean }>(r)
+      )
+      .then((data) => {
+        if (!isCurrent) return;
         const fetched = Array.isArray(data.messages) ? data.messages : [];
         setMessages((current) => mergeFriendMessages(current, fetched));
         setNextCursor(typeof data.nextCursor === 'string' ? data.nextCursor : null);
         setHasMoreMessages(Boolean(data.hasMore && data.nextCursor));
       })
       .catch((requestError: unknown) => {
-        if (isCurrent) setMessageError(requestError instanceof Error ? requestError.message : 'Không thể tải cuộc trò chuyện.');
-      })
-      .finally(() => {
-        if (isCurrent) setIsMessagesLoading(false);
+        if (isCurrent) setMessageError(requestError instanceof Error ? requestError.message : 'Không thể tải tin nhắn.');
       });
+
+    void Promise.allSettled([fetchSession, fetchMessages]).finally(() => {
+      if (isCurrent) setIsMessagesLoading(false);
+    });
     return () => {
       isCurrent = false;
     };
