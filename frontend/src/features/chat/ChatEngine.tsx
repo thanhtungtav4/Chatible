@@ -429,10 +429,12 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   }, [chatState]);
 
   const handleStartMatching = () => {
+    triggerHaptic('medium');
     void requestNotificationPermission();
     const socket = socketRef.current;
     if (!socket?.connected) {
-      setConnectionError('Chưa kết nối máy chủ. Kiểm tra đăng nhập rồi thử lại.');
+      socket?.connect();
+      setConnectionError('Chưa kết nối máy chủ realtime. Đang thử kết nối lại, vui lòng bấm lại sau 1 giây.');
       return;
     }
     setConnectionError(null);
@@ -509,14 +511,16 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     setChatState('IDLE');
   }, [chatState, currentUser.id, sessionMedia]);
 
-  const isInitialResetMount = useRef(true);
+  const prevResetTriggerRef = useRef(resetTrigger);
+  const handleBackToIdleRef = useRef(handleBackToIdle);
+  handleBackToIdleRef.current = handleBackToIdle;
+
   useEffect(() => {
-    if (isInitialResetMount.current) {
-      isInitialResetMount.current = false;
-      return;
+    if (resetTrigger !== undefined && resetTrigger !== prevResetTriggerRef.current) {
+      prevResetTriggerRef.current = resetTrigger;
+      handleBackToIdleRef.current();
     }
-    handleBackToIdle();
-  }, [resetTrigger, handleBackToIdle]);
+  }, [resetTrigger]);
 
   const handleSendMessage = (event: React.FormEvent) => {
     event.preventDefault();
