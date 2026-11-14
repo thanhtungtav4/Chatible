@@ -62,6 +62,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     emailVerificationRequired: boolean;
   } | null>(null);
   const googleBtnContainerRef = useRef<HTMLDivElement>(null);
+  const gsiInitializedClientIdRef = useRef<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -256,6 +257,9 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     [onSuccess, onClose]
   );
 
+  const handleGoogleCredentialResponseRef = useRef(handleGoogleCredentialResponse);
+  handleGoogleCredentialResponseRef.current = handleGoogleCredentialResponse;
+
   useEffect(() => {
     if (!isOpen || !authConfig?.googleAuthEnabled || !authConfig?.googleClientId) return;
     if (mode !== 'LOGIN' && mode !== 'REGISTER') return;
@@ -266,18 +270,24 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       if (isCancelled || !window.google?.accounts?.id || !authConfig?.googleClientId) return;
 
       try {
-        window.google.accounts.id.initialize({
-          client_id: authConfig.googleClientId,
-          callback: (response: { credential?: string }) => {
-            if (response?.credential) {
-              void handleGoogleCredentialResponse(response.credential);
-            }
-          },
-          cancel_on_tap_outside: true,
-          ux_mode: 'popup',
-          auto_select: false,
-        });
+        // Only initialize once globally per clientId to avoid GSI_LOGGER multiple-initialization warning
+        if (gsiInitializedClientIdRef.current !== authConfig.googleClientId) {
+          window.google.accounts.id.initialize({
+            client_id: authConfig.googleClientId,
+            callback: (response: { credential?: string }) => {
+              if (response?.credential) {
+                void handleGoogleCredentialResponseRef.current(response.credential);
+              }
+            },
+            cancel_on_tap_outside: true,
+            ux_mode: 'popup',
+            auto_select: false,
+            itp_support: true,
+          });
+          gsiInitializedClientIdRef.current = authConfig.googleClientId;
+        }
 
+        // Render the Google Sign-in button into the current modal DOM container
         if (googleBtnContainerRef.current) {
           googleBtnContainerRef.current.innerHTML = '';
           window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
@@ -315,7 +325,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, mode, authConfig, handleGoogleCredentialResponse]);
+  }, [isOpen, mode, authConfig]);
 
   const handleGoogleOnboardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
