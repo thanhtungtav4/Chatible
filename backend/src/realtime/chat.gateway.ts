@@ -870,8 +870,7 @@ export class ChatGateway {
     const partnerUserId = activeSession.userAId === userId
       ? activeSession.userBId
       : activeSession.userAId;
-    const timeoutSec = Math.max(30, Math.round(((session.reconnectUntil ?? Date.now()) - Date.now()) / 1000));
-    this.io.to(this.userRoom(partnerUserId)).emit(SocketEvents.CONNECTION_LOST, { timeoutSec });
+    this.io.to(this.userRoom(partnerUserId)).emit(SocketEvents.CONNECTION_LOST, { timeoutSec: 0 });
   }
 
   private async endActiveSession(sessionId: string, reason: string): Promise<void> {
@@ -909,10 +908,6 @@ export class ChatGateway {
     }
   }
 
-  private async endExpiredReconnect(sessionId: string): Promise<void> {
-    await this.sessionCoordinator.endIfReconnectExpired(sessionId);
-  }
-
   private async isEmailVerificationBlocked(userId: string): Promise<boolean> {
     try {
       const [setting] = await db
@@ -942,6 +937,10 @@ export class ChatGateway {
 
   private cacheSession(shared: CoordinatedSession): ActiveSession {
     const current = this.activeSessions.get(shared.sessionId);
+    if (current?.reconnectTimeout) {
+      clearTimeout(current.reconnectTimeout);
+      current.reconnectTimeout = undefined;
+    }
     const session: ActiveSession = {
       sessionId: shared.sessionId,
       userAId: shared.userAId,
@@ -949,22 +948,8 @@ export class ChatGateway {
       userBId: shared.userBId,
       userBSocketId: shared.userBSocketId,
       state: shared.state as ChatState,
-      reconnectTimeout: current?.reconnectTimeout,
     };
     this.activeSessions.set(shared.sessionId, session);
-    if (shared.state === 'RECONNECTING') {
-      if (!session.reconnectTimeout) {
-        const timeoutMs = Math.max(0, (shared.reconnectUntil ?? Date.now()) - Date.now());
-        session.reconnectTimeout = setTimeout(() => {
-          void this.endExpiredReconnect(shared.sessionId).catch((error: unknown) => {
-            console.error('[Chat] Could not expire reconnecting session:', error);
-          });
-        }, timeoutMs);
-      }
-    } else if (session.reconnectTimeout) {
-      clearTimeout(session.reconnectTimeout);
-      session.reconnectTimeout = undefined;
-    }
     return session;
   }
 

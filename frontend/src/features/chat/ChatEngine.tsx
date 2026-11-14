@@ -89,7 +89,6 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const [partner, setPartner] = useState<UserPublicProfile | null>(initialLocal?.partner ?? null);
   const [sessionId, setSessionId] = useState<string | null>(initialLocal?.sessionId ?? null);
   const [secondsWaiting, setSecondsWaiting] = useState(0);
-  const [reconnectCountdown, setReconnectCountdown] = useState(600);
   const [messages, setMessages] = useState<ChatMessage[]>(initialLocal?.messages ?? []);
   const [inputMessage, setInputMessage] = useState('');
   const [isFriendRequested, setIsFriendRequested] = useState(false);
@@ -390,9 +389,8 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
         )
       );
     });
-    socket.on(SocketEvents.CONNECTION_LOST, ({ timeoutSec }: { timeoutSec: number }) => {
+    socket.on(SocketEvents.CONNECTION_LOST, () => {
       shouldResumeRef.current = true;
-      setReconnectCountdown(timeoutSec);
       setChatState('RECONNECTING');
     });
     socket.on(SocketEvents.CONNECTION_RESTORED, () => {
@@ -415,20 +413,6 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     if (chatState !== 'WAITING') return;
     setSecondsWaiting(0);
     const interval = window.setInterval(() => setSecondsWaiting((value) => value + 1), 1000);
-    return () => window.clearInterval(interval);
-  }, [chatState]);
-
-  useEffect(() => {
-    if (chatState !== 'RECONNECTING') return;
-    const interval = window.setInterval(() => {
-      setReconnectCountdown((value) => {
-        if (value <= 1) {
-          setChatState('ENDED');
-          return 0;
-        }
-        return value - 1;
-      });
-    }, 1000);
     return () => window.clearInterval(interval);
   }, [chatState]);
 
@@ -881,17 +865,17 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
           </div>
 
           {chatState === 'RECONNECTING' && (
-            <div className="flex items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3.5 py-2 text-xs text-amber-800">
+            <div className="flex items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800">
               <div className="flex items-center gap-1.5 min-w-0">
                 <WifiOff size={15} className="text-amber-600 shrink-0 animate-pulse" />
-                <span className="truncate">
-                  Đối phương tạm rời đi. Đang giữ phiên chờ ({Math.floor(reconnectCountdown / 60)}:{String(reconnectCountdown % 60).padStart(2, '0')})…
+                <span className="truncate font-medium">
+                  Đối phương tạm thời offline. Phiên chat vẫn tiếp tục được giữ…
                 </span>
               </div>
               <button
                 type="button"
                 onClick={handleNextChat}
-                className="shrink-0 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 active:scale-95 transition"
+                className="shrink-0 rounded-full bg-amber-600 px-3 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 active:scale-95 transition"
               >
                 Tìm người mới ngay
               </button>
@@ -1124,6 +1108,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                 type="button"
                 onClick={() => {
                   setShowEndConfirm(false);
+                  clearLocalAnonSession(currentUser.id);
                   socketRef.current?.emit(SocketEvents.CHAT_END);
                   sessionIdRef.current = null;
                   partnerRef.current = null;
