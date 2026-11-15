@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { AudioRecorder } from './audio-recorder.js';
+import { ImageCompressor } from './image-compressor.js';
 import {
   compressAndUploadWithContextGuard,
   executeRevokeWithSync,
@@ -270,5 +271,18 @@ describe('MediaPreviewLifecycle & payload parser', () => {
     });
     expect(offlineOutcome.revoked).toBe(false);
     expect(lifecycle.beginLoad('m-offline')).not.toBeNull();
+  });
+
+  it('validates image file type and 30MB maximum limit in ImageCompressor', async () => {
+    const invalidFile = new File(['text'], 'test.txt', { type: 'text/plain' });
+    await expect(ImageCompressor.compress(invalidFile)).rejects.toThrow(
+      'Tệp tải lên không phải là định dạng hình ảnh hợp lệ.'
+    );
+
+    const oversizedFile = new File([new Uint8Array(100)], 'huge.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(oversizedFile, 'size', { value: 31_000_000 });
+    await expect(ImageCompressor.compress(oversizedFile)).rejects.toThrow(
+      'Dung lượng ảnh phải nhỏ hơn 30 MB.'
+    );
   });
 });

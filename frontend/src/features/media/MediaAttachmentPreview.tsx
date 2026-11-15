@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
-import { Ban, Eye } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Ban, Eye, Maximize2, X } from 'lucide-react';
 import type { ClientMediaType } from './encryptedMediaClient.js';
 import type { MediaViewState } from './mediaPreviewLifecycle.js';
 
@@ -75,6 +76,24 @@ export function MediaAttachmentPreview({
 }: MediaAttachmentPreviewProps) {
   const isRevoked = Boolean(viewState?.revoked || revokedFallback);
   const previewUrl = isRevoked ? undefined : (localPreviewUrl || viewState?.previewUrl);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsLightboxOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLightboxOpen]);
+
+  useEffect(() => {
+    if (!previewUrl && isLightboxOpen) {
+      setIsLightboxOpen(false);
+    }
+  }, [previewUrl, isLightboxOpen]);
 
   return (
     <div className="space-y-2 text-xs">
@@ -88,23 +107,92 @@ export function MediaAttachmentPreview({
       </div>
 
       {previewUrl && mediaType === 'IMAGE' && (
-        <div className="relative select-none overflow-hidden rounded-lg">
-          <img
-            src={previewUrl}
-            alt={viewState?.watermarkText || 'Media'}
-            draggable={false}
-            onContextMenu={(event) => event.preventDefault()}
-            className="max-h-56 select-none rounded-lg object-cover"
-          />
-          {uploadProgress !== undefined && uploadProgress < 100 && (
-            <CircularProgress percent={uploadProgress} />
+        <>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (uploadProgress === undefined || uploadProgress >= 100) {
+                setIsLightboxOpen(true);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (
+                (e.key === 'Enter' || e.key === ' ') &&
+                (uploadProgress === undefined || uploadProgress >= 100)
+              ) {
+                e.preventDefault();
+                setIsLightboxOpen(true);
+              }
+            }}
+            className="group relative select-none overflow-hidden rounded-lg cursor-pointer transition hover:opacity-95"
+            title="Bấm để xem ảnh kích thước đầy đủ"
+          >
+            <img
+              src={previewUrl}
+              alt={viewState?.watermarkText || 'Media'}
+              draggable={false}
+              onContextMenu={(event) => event.preventDefault()}
+              className="max-h-56 select-none rounded-lg object-cover transition duration-150 group-hover:scale-[1.01]"
+            />
+            {/* Zoom hint badge on hover */}
+            <div className="absolute top-2 right-2 rounded-full bg-black/50 p-1.5 text-white opacity-0 transition duration-150 group-hover:opacity-100 pointer-events-none shadow-sm">
+              <Maximize2 size={13} />
+            </div>
+
+            {uploadProgress !== undefined && uploadProgress < 100 && (
+              <CircularProgress percent={uploadProgress} />
+            )}
+            {viewState?.watermarkedMode !== 'embedded' && viewState?.watermarkText && (
+              <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-black/55 px-1 py-0.5 text-[9px] text-white">
+                {viewState.watermarkText}
+              </span>
+            )}
+          </div>
+
+          {/* Fullscreen Lightbox Modal */}
+          {isLightboxOpen && typeof document !== 'undefined' && createPortal(
+            <div
+              role="dialog"
+              aria-label="Xem ảnh kích thước đầy đủ"
+              aria-modal="true"
+              onClick={() => setIsLightboxOpen(false)}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3 sm:p-6 backdrop-blur-sm animate-in fade-in select-none"
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsLightboxOpen(false);
+                }}
+                className="absolute top-4 right-4 z-10 rounded-full bg-white/20 p-2 text-white hover:bg-white/30 transition shadow-lg focus:outline-none"
+                aria-label="Đóng"
+                title="Đóng (Esc)"
+              >
+                <X size={22} />
+              </button>
+
+              <div
+                className="relative flex max-h-[92vh] max-w-[96vw] items-center justify-center overflow-hidden rounded-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src={previewUrl}
+                  alt={viewState?.watermarkText || 'Xem ảnh phóng to'}
+                  draggable={false}
+                  onContextMenu={(e) => e.preventDefault()}
+                  className="max-h-[88vh] max-w-[94vw] rounded-xl object-contain shadow-2xl"
+                />
+                {viewState?.watermarkedMode !== 'embedded' && viewState?.watermarkText && (
+                  <span className="pointer-events-none absolute inset-x-2 bottom-3 rounded-lg bg-black/60 px-3 py-1 text-center text-xs text-white">
+                    {viewState.watermarkText}
+                  </span>
+                )}
+              </div>
+            </div>,
+            document.body
           )}
-          {viewState?.watermarkedMode !== 'embedded' && viewState?.watermarkText && (
-            <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-black/55 px-1 py-0.5 text-[9px] text-white">
-              {viewState.watermarkText}
-            </span>
-          )}
-        </div>
+        </>
       )}
 
       {mediaType === 'AUDIO' && (

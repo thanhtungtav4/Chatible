@@ -43,98 +43,143 @@ export class ImageCompressor {
           });
           return { promise, resolve, reject };
         })();
+
     const img = new Image();
-    const reader = new FileReader();
+    const objectUrl = URL.createObjectURL(imageFile);
 
-      reader.onload = (e) => {
-        img.src = e.target?.result as string;
-      };
+    const cleanup = () => {
+      try {
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        // ignore
+      }
+    };
 
-      reader.onerror = () => reject(new Error('Lỗi khi đọc tệp ảnh.'));
+    img.onload = () => {
+      cleanup();
+      let { width, height } = img;
+      if (width > maxDimension || height > maxDimension) {
+        const scale = maxDimension / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
 
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > maxDimension || height > maxDimension) {
-          const scale = maxDimension / Math.max(width, height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
-        }
-
-        const encode = (targetWidth: number, targetHeight: number, targetQuality: number) =>
-          new Promise<Blob>((resolveBlob, rejectBlob) => {
-            const canvas = document.createElement('canvas');
-            canvas.width = targetWidth;
-            canvas.height = targetHeight;
-            const context = canvas.getContext('2d');
-            if (!context) {
-              rejectBlob(new Error('Không thể khởi tạo Canvas 2D context.'));
-              return;
-            }
-            context.drawImage(img, 0, 0, targetWidth, targetHeight);
-            canvas.toBlob(
-              (blob) => blob ? resolveBlob(blob) : rejectBlob(new Error('Nén ảnh thất bại.')),
-              'image/webp',
-              targetQuality
-            );
-          });
-
-        void (async () => {
-          const MIN_TARGET_BYTES = 300 * 1024;
-          const MAX_TARGET_BYTES = 800 * 1024;
-          const minUsefulBytes = Math.min(MIN_TARGET_BYTES, imageFile.size);
-          let outputWidth = width;
-          let outputHeight = height;
-          let outputQuality = quality;
-
-          for (let attempt = 0; attempt < 24; attempt++) {
-            const blob = await encode(outputWidth, outputHeight, outputQuality);
-            const compressedFile = new File(
-              [blob],
-              imageFile.name.replace(/\.[^/.]+$/, '') + '.webp',
-              { type: 'image/webp' }
-            );
-            if (compressedFile.size <= MAX_TARGET_BYTES && compressedFile.size >= minUsefulBytes) {
-              resolve({
-                file: compressedFile,
-                originalSize: imageFile.size,
-                compressedSize: compressedFile.size,
-                width: outputWidth,
-                height: outputHeight,
-                compressionRatio: ((1 - compressedFile.size / imageFile.size) * 100).toFixed(1) + '%',
-              });
-              return;
-            }
-            if (compressedFile.size > MAX_TARGET_BYTES) {
-              if (outputQuality > 0.5) {
-                outputQuality = Math.max(0.45, outputQuality - 0.1);
-              } else {
-                outputWidth = Math.max(1, Math.round(outputWidth * 0.85));
-                outputHeight = Math.max(1, Math.round(outputHeight * 0.85));
-                outputQuality = quality;
-              }
-              continue;
-            }
-            if (outputQuality < 0.95) {
-              outputQuality = Math.min(0.95, outputQuality + 0.05);
-              continue;
-            }
-            // Small or visually simple originals need not be inflated to meet the lower target.
-            resolve({
-              file: compressedFile,
-              originalSize: imageFile.size,
-              compressedSize: compressedFile.size,
-              width: outputWidth,
-              height: outputHeight,
-              compressionRatio: ((1 - compressedFile.size / imageFile.size) * 100).toFixed(1) + '%',
-            });
+      const encode = (targetWidth: number, targetHeight: number, targetQuality: number) =>
+        new Promise<Blob>((resolveBlob, rejectBlob) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          const context = canvas.getContext('2d');
+          if (!context) {
+            rejectBlob(new Error('Không thể khởi tạo Canvas 2D context.'));
             return;
           }
-          reject(new Error('Không thể nén ảnh xuống dưới 800 KB.'));
-        })().catch(reject);
-      };
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = 'high';
+          context.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-      img.onerror = () => reject(new Error('Tệp ảnh bị lỗi hoặc không hỗ trợ giải mã.'));
-      reader.readAsDataURL(imageFile);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolveBlob(blob);
+              } else {
+                canvas.toBlob(
+                  (fallbackBlob) =>
+                    fallbackBlob
+                      ? resolveBlob(fallbackBlob)
+                      : rejectBlob(new Error('Nén ảnh thất bại.')),
+                  'image/jpeg',
+                  targetQuality
+                );
+              }
+            },
+            'image/webp',
+            targetQuality
+          );
+        });
+
+      void (async () => {
+        const TARGET_MAX_BYTES = 800 * 1024; // 800 KB ideal target
+        const ABSOLUTE_MAX_BYTES = 2_000_000; // 2 MB acceptable upper limit (backend allows 30MB)
+        let outputWidth = width;
+        let outputHeight = height;
+        let outputQuality = quality;
+
+        let bestResult: CompressionResult | null = null;
+
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const blob = await encode(outputWidth, outputHeight, outputQuality);
+          const extension = blob.type === 'image/webp' ? '.webp' : '.jpg';
+          const compressedFile = new File(
+            [blob],
+            imageFile.name.replace(/\.[^/.]+$/, '') + extension,
+            { type: blob.type }
+          );
+
+          const currentResult: CompressionResult = {
+            file: compressedFile,
+            originalSize: imageFile.size,
+            compressedSize: compressedFile.size,
+            width: outputWidth,
+            height: outputHeight,
+            compressionRatio: ((1 - compressedFile.size / imageFile.size) * 100).toFixed(1) + '%',
+          };
+
+          if (!bestResult || compressedFile.size < bestResult.compressedSize) {
+            bestResult = currentResult;
+          }
+
+          // If under target, we are great!
+          if (compressedFile.size <= TARGET_MAX_BYTES) {
+            resolve(currentResult);
+            return;
+          }
+
+          // If still over target:
+          // 1. Lower quality down to 0.65 first
+          if (outputQuality > 0.66) {
+            outputQuality = Math.max(0.65, outputQuality - 0.1);
+          } else {
+            // 2. Adaptive dimension reduction based on size ratio, minimum clamp to 480px
+            const ratio = Math.sqrt(TARGET_MAX_BYTES / compressedFile.size);
+            const scaleDown = Math.min(0.85, Math.max(0.6, ratio * 1.05));
+            outputWidth = Math.max(480, Math.round(outputWidth * scaleDown));
+            outputHeight = Math.max(480, Math.round(outputHeight * scaleDown));
+            outputQuality = 0.72; // slight bump for smaller dimension
+          }
+        }
+
+        // After iterations: if bestResult exists and is reasonable, resolve with bestResult!
+        if (bestResult && bestResult.compressedSize <= ABSOLUTE_MAX_BYTES) {
+          resolve(bestResult);
+          return;
+        }
+
+        // Even if bestResult is slightly above 2MB, if it's smaller than the original and < 10MB, return it!
+        if (bestResult && bestResult.compressedSize < imageFile.size && bestResult.compressedSize <= 10_000_000) {
+          resolve(bestResult);
+          return;
+        }
+
+        // If bestResult exists at all, resolve with it rather than failing
+        if (bestResult) {
+          resolve(bestResult);
+          return;
+        }
+
+        reject(new Error('Không thể xử lý hình ảnh. Vui lòng thử lại với ảnh khác.'));
+      })().catch((err) => {
+        cleanup();
+        reject(err);
+      });
+    };
+
+    img.onerror = () => {
+      cleanup();
+      reject(new Error('Tệp ảnh bị lỗi hoặc không hỗ trợ giải mã.'));
+    };
+
+    img.src = objectUrl;
     return promise;
   }
 }
