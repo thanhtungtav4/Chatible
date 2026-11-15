@@ -120,3 +120,77 @@ export function playMessageSentSound(): void {
   osc.start(now);
   osc.stop(now + 0.06);
 }
+
+/**
+ * Cheerful light chirp when a message reaction is added
+ */
+export function playReactionPopSound(): void {
+  if (!isSoundEnabled()) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(1046.5, now); // C6
+  osc.frequency.exponentialRampToValueAtTime(1318.5, now + 0.05); // E6
+
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(now);
+  osc.stop(now + 0.09);
+}
+
+let ringInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Telephone ringtone loop for incoming/outgoing calls
+ */
+export function startCallRingtone(): void {
+  if (!isSoundEnabled() || ringInterval) return;
+  const playRingPulse = () => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(440, now);
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(480, now);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.05);
+    gain.gain.setValueAtTime(0.12, now + 0.8);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.95);
+    osc2.stop(now + 0.95);
+  };
+
+  playRingPulse();
+  ringInterval = setInterval(playRingPulse, 2500);
+}
+
+export function stopCallRingtone(): void {
+  if (ringInterval) {
+    clearInterval(ringInterval);
+    ringInterval = null;
+  }
+}

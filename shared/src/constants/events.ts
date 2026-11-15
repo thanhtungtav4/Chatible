@@ -20,11 +20,19 @@ export const SocketEvents = {
   MESSAGE_SEND: 'message:send',
   MESSAGE_RECEIVE: 'message:receive',
   MESSAGE_READ: 'message:read',
+  MESSAGE_REACTION: 'message:reaction',
   MESSAGE_REVOKE: 'message:revoke',
 
   // Typing indicators
   TYPING_START: 'typing:start',
   TYPING_STOP: 'typing:stop',
+
+  // WebRTC Audio/Video Calls (P2P between friends)
+  CALL_OFFER: 'call:offer',
+  CALL_ANSWER: 'call:answer',
+  CALL_ICE_CANDIDATE: 'call:ice_candidate',
+  CALL_END: 'call:end',
+  CALL_REJECT: 'call:reject',
 
   // Reconnection 30s
   CONNECTION_LOST: 'connection:lost',

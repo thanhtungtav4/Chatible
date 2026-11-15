@@ -6,14 +6,21 @@ import {
   ArrowLeft,
   Ban,
   Check,
+  CheckCheck,
   Flame,
   ImagePlus,
   MessageCircle,
   Mic,
+  MicOff,
+  Phone,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneOff,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
+  SmilePlus,
   UserRound,
   Users,
   UserX,
@@ -27,7 +34,14 @@ import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionM
 import { useSmartAutoScroll } from '../chat/useSmartAutoScroll.js';
 import { mergeFriendMessages, type OrderedFriendMessage } from './friendMessageOrder.js';
 import { triggerPushNotification } from '../notifications/pushNotification.js';
-import { playMessageReceivedSound, playMessageSentSound } from '../audio/soundEffects.js';
+import {
+  playMessageReceivedSound,
+  playMessageSentSound,
+  playReactionPopSound,
+  startCallRingtone,
+  stopCallRingtone,
+} from '../audio/soundEffects.js';
+import { ReactionPickerPopup, ReactionBadges } from '../chat/MessageReactionPicker.js';
 
 type Friend = {
   id: string;
@@ -59,6 +73,8 @@ type FriendMessage = OrderedFriendMessage & {
   metadata?: unknown;
   isAdultContent?: boolean;
   expiresAt: string;
+  reactions?: Record<string, string>;
+  isRead?: boolean;
 };
 
 type FriendsViewProps = {
@@ -85,6 +101,12 @@ function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
 export function FriendsView({ currentUserId }: FriendsViewProps) {
@@ -126,6 +148,21 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [messageError, setMessageError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isFriendTyping, setIsFriendTyping] = useState(false);
+  const [activeReactionMessageId, setActiveReactionMessageId] = useState<string | null>(null);
+
+  // WebRTC P2P Voice Call States
+  const [callState, setCallState] = useState<'idle' | 'outgoing' | 'incoming' | 'active'>('idle');
+  const [callerInfo, setCallerInfo] = useState<{ id: string; nickname: string } | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
+
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const incomingSdpRef = useRef<RTCSessionDescriptionInit | null>(null);
+
   const friendTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingEmittedRef = useRef(false);
   const stopTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -222,6 +259,193 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     void loadFriends();
   }, [loadFriends]);
 
+  const cleanupCall = useCallback(() => {
+    stopCallRingtone();
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    incomingSdpRef.current = null;
+    setCallState('idle');
+    setCallerInfo(null);
+    setCallDuration(0);
+    setIsMicMuted(false);
+  }, []);
+
+  const handleEndCall = useCallback(() => {
+    const targetUserId = callerInfo?.id || selectedFriendIdRef.current;
+    if (targetUserId) {
+      socketRef.current?.emit(SocketEvents.CALL_END, { targetUserId });
+    }
+    cleanupCall();
+  }, [callerInfo, cleanupCall]);
+
+  const handleRejectCall = useCallback(() => {
+    const targetUserId = callerInfo?.id;
+    if (targetUserId) {
+      socketRef.current?.emit(SocketEvents.CALL_REJECT, { targetUserId });
+    }
+    cleanupCall();
+  }, [callerInfo, cleanupCall]);
+
+  const handleStartVoiceCall = useCallback(async (targetFriend: Friend) => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === 'undefined') {
+      setCallError('Trình duyệt không hỗ trợ cuộc gọi WebRTC.');
+      setTimeout(() => setCallError(null), 3500);
+      return;
+    }
+    cleanupCall();
+    setCallState('outgoing');
+    setCallerInfo({ id: targetFriend.userId, nickname: targetFriend.nickname });
+    startCallRingtone();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStreamRef.current = stream;
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+      peerConnectionRef.current = pc;
+
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socketRef.current?.emit(SocketEvents.CALL_ICE_CANDIDATE, {
+            targetUserId: targetFriend.userId,
+            candidate: event.candidate,
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        if (remoteAudioRef.current && event.streams[0]) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+          remoteAudioRef.current.play().catch(() => undefined);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          cleanupCall();
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socketRef.current?.emit(SocketEvents.CALL_OFFER, {
+        targetUserId: targetFriend.userId,
+        sdp: offer,
+      });
+    } catch (err) {
+      cleanupCall();
+      setCallError(err instanceof Error ? err.message : 'Không thể truy cập microphone.');
+      setTimeout(() => setCallError(null), 3500);
+    }
+  }, [cleanupCall]);
+
+  const handleAcceptCall = useCallback(async () => {
+    const sdp = incomingSdpRef.current;
+    const caller = callerInfo;
+    if (!sdp || !caller) return;
+    stopCallRingtone();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStreamRef.current = stream;
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+      peerConnectionRef.current = pc;
+
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socketRef.current?.emit(SocketEvents.CALL_ICE_CANDIDATE, {
+            targetUserId: caller.id,
+            candidate: event.candidate,
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        if (remoteAudioRef.current && event.streams[0]) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+          remoteAudioRef.current.play().catch(() => undefined);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          cleanupCall();
+        }
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socketRef.current?.emit(SocketEvents.CALL_ANSWER, {
+        targetUserId: caller.id,
+        sdp: answer,
+      });
+
+      setCallState('active');
+      callTimerRef.current = setInterval(() => {
+        setCallDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      cleanupCall();
+      setCallError(err instanceof Error ? err.message : 'Lỗi kết nối cuộc gọi.');
+      setTimeout(() => setCallError(null), 3500);
+    }
+  }, [callerInfo, cleanupCall]);
+
+  const handleToggleMic = useCallback(() => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMicMuted(!audioTrack.enabled);
+      }
+    }
+  }, []);
+
+  const handleToggleReaction = useCallback((messageId: string, emoji: string) => {
+    const activeFriend = selectedFriendIdRef.current;
+    if (!activeFriend || !socketRef.current?.connected) return;
+    socketRef.current.emit(SocketEvents.MESSAGE_REACTION, {
+      messageId,
+      emoji,
+      targetUserId: activeFriend,
+    });
+    playReactionPopSound();
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId) return msg;
+        const currentReactions = { ...(msg.reactions || {}) };
+        if (currentReactions[currentUserId] === emoji) {
+          delete currentReactions[currentUserId];
+        } else {
+          currentReactions[currentUserId] = emoji;
+        }
+        return { ...msg, reactions: currentReactions };
+      })
+    );
+  }, [currentUserId]);
+
   useEffect(() => {
     const socket = io(API_BASE_URL, {
       withCredentials: true,
@@ -235,6 +459,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
         setIsFriendTyping(false);
         setMessages((current) => mergeFriendMessages(current, [incoming]));
         playMessageReceivedSound();
+        socket.emit(SocketEvents.MESSAGE_READ, { targetUserId: activeFriend });
       }
 
       if (incoming.senderId !== currentUserId) {
@@ -272,6 +497,73 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       }
     });
 
+    socket.on(SocketEvents.MESSAGE_REACTION, (data: { messageId: string; emoji: string; userId: string }) => {
+      if (!data?.messageId) return;
+      playReactionPopSound();
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== data.messageId) return msg;
+          const currentReactions = { ...(msg.reactions || {}) };
+          if (currentReactions[data.userId] === data.emoji) {
+            delete currentReactions[data.userId];
+          } else {
+            currentReactions[data.userId] = data.emoji;
+          }
+          return { ...msg, reactions: currentReactions };
+        })
+      );
+    });
+
+    socket.on(SocketEvents.MESSAGE_READ, () => {
+      setMessages((prev) => prev.map((msg) => (msg.senderId === currentUserId ? { ...msg, isRead: true } : msg)));
+    });
+
+    socket.on(SocketEvents.CALL_OFFER, (data: { callerId: string; callerNickname: string; sdp: RTCSessionDescriptionInit }) => {
+      incomingSdpRef.current = data.sdp;
+      setCallerInfo({ id: data.callerId, nickname: data.callerNickname || 'Bạn bè' });
+      setCallState('incoming');
+      startCallRingtone();
+    });
+
+    socket.on(SocketEvents.CALL_ANSWER, async (data: { responderId: string; sdp: RTCSessionDescriptionInit }) => {
+      stopCallRingtone();
+      if (peerConnectionRef.current) {
+        try {
+          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          setCallState('active');
+          if (callTimerRef.current) clearInterval(callTimerRef.current);
+          callTimerRef.current = setInterval(() => {
+            setCallDuration((prev) => prev + 1);
+          }, 1000);
+        } catch (e) {
+          console.error('Call answer error:', e);
+          cleanupCall();
+        }
+      }
+    });
+
+    socket.on(SocketEvents.CALL_ICE_CANDIDATE, async (data: { senderId: string; candidate: RTCIceCandidateInit }) => {
+      if (peerConnectionRef.current && data?.candidate) {
+        try {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (e) {
+          console.error('Error adding ice candidate:', e);
+        }
+      }
+    });
+
+    socket.on(SocketEvents.CALL_END, () => {
+      cleanupCall();
+    });
+
+    socket.on(SocketEvents.CALL_REJECT, (data?: { reason?: string }) => {
+      if (data?.reason) {
+        setCallError(data.reason);
+        setTimeout(() => setCallError(null), 3500);
+      }
+      cleanupCall();
+    });
+
     socket.on(SocketEvents.MEDIA_REVOKED, (payload: { mediaId?: string }) => {
       if (!payload?.mediaId) return;
       mediaHandlersRef.current.markMediaRevoked(
@@ -281,12 +573,13 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     });
 
     return () => {
+      cleanupCall();
       if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
       if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [cleanupCall, currentUserId]);
 
   useEffect(() => {
     setIsFriendTyping(false);
@@ -334,6 +627,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
         setMessages((current) => mergeFriendMessages(current, fetched));
         setNextCursor(typeof data.nextCursor === 'string' ? data.nextCursor : null);
         setHasMoreMessages(Boolean(data.hasMore && data.nextCursor));
+        socketRef.current?.emit(SocketEvents.MESSAGE_READ, { targetUserId: selectedFriendId });
       })
       .catch((requestError: unknown) => {
         if (isCurrent) setMessageError(requestError instanceof Error ? requestError.message : 'Không thể tải tin nhắn.');
@@ -599,6 +893,20 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
             </button>
             <button
               type="button"
+              onClick={() => handleStartVoiceCall(selectedFriend)}
+              disabled={callState !== 'idle'}
+              className={`relative rounded-lg p-2 transition ${
+                callState !== 'idle'
+                  ? 'bg-emerald-100 text-emerald-700 animate-pulse'
+                  : 'text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
+              } disabled:opacity-40`}
+              title="Gọi thoại P2P (WebRTC)"
+              aria-label="Gọi thoại"
+            >
+              <Phone size={17} />
+            </button>
+            <button
+              type="button"
               onClick={() => handlePromptUnfriend(selectedFriend.userId, selectedFriend.nickname)}
               disabled={isActionBusy}
               className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
@@ -619,6 +927,102 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
             </button>
           </div>
         </div>
+
+        {/* Hidden Remote Audio Element for WebRTC */}
+        <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+
+        {callError && (
+          <div className="mt-2 rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700 font-medium animate-in fade-in">
+            {callError}
+          </div>
+        )}
+
+        {/* WebRTC Voice Call Status Banners */}
+        {callState === 'incoming' && (
+          <div className="mt-2 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-3 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-emerald-500 text-white flex items-center justify-center animate-pulse shadow-md">
+                <PhoneIncoming size={18} />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-slate-900">Cuộc gọi thoại đến</h4>
+                <p className="text-[11px] text-emerald-800 font-medium">{callerInfo?.nickname || 'Bạn bè'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRejectCall}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white shadow-sm hover:bg-rose-600 active:scale-95"
+                title="Từ chối"
+              >
+                <PhoneOff size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={handleAcceptCall}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 active:scale-95"
+                title="Trả lời"
+              >
+                <Phone size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {callState === 'outgoing' && (
+          <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-3 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center animate-pulse shadow-md">
+                <PhoneCall size={18} />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-slate-900">Đang gọi thoại...</h4>
+                <p className="text-[11px] text-slate-600 font-medium">{callerInfo?.nickname || selectedFriend.nickname}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleEndCall}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white shadow-sm hover:bg-rose-600 active:scale-95"
+              title="Hủy cuộc gọi"
+            >
+              <PhoneOff size={16} />
+            </button>
+          </div>
+        )}
+
+        {callState === 'active' && (
+          <div className="mt-2 rounded-2xl border border-emerald-400 bg-emerald-600 text-white p-2.5 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-200 animate-ping" />
+              <div>
+                <span className="text-xs font-bold">Đang gọi • {formatDuration(callDuration)}</span>
+                <p className="text-[10px] text-emerald-100">{callerInfo?.nickname || selectedFriend.nickname}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleToggleMic}
+                className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                  isMicMuted ? 'bg-amber-400 text-slate-900' : 'bg-emerald-700/90 text-white hover:bg-emerald-700'
+                }`}
+                title={isMicMuted ? 'Bật micro' : 'Tắt micro'}
+              >
+                {isMicMuted ? <MicOff size={14} /> : <Mic size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={handleEndCall}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-500 text-white hover:bg-rose-600 active:scale-95 shadow-xs"
+                title="Kết thúc"
+              >
+                <PhoneOff size={14} />
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div
@@ -667,24 +1071,59 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                   : isMine ? 'Video đã gửi' : 'Video đã nhận'
                 : '';
               return (
-                <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm message-selectable ${isMine ? 'rounded-br-xs bg-blue-600 text-white shadow-xs' : 'rounded-bl-xs border border-slate-200/70 bg-slate-100 text-slate-800 shadow-xs'}`}>
-                    {media ? (
-                      <MediaAttachmentPreview
-                        title={mediaLabel}
-                        mediaType={media.mediaType}
-                        isAdult={media.isAdult}
-                        isMine={isMine}
-                        viewState={sessionMedia.mediaViews[message.id]}
-                        busy={sessionMedia.mediaBusy}
-                        onView={() => void sessionMedia.openMediaPreview(message.id, media.mediaId, media.contentType)}
-                        onRevoke={() => void sessionMedia.revokeMediaPreview(message.id, media.mediaId)}
-                      />
-                    ) : (
-                      <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                    )}
-                    <time className={`mt-1 block text-[10px] ${isMine ? 'text-blue-100' : 'text-slate-400'}`} dateTime={message.sentAt}>{formatTime(message.sentAt)}</time>
+                <div key={message.id} className={`flex flex-col relative group/msg ${isMine ? 'items-end' : 'items-start'}`}>
+                  {activeReactionMessageId === message.id && (
+                    <ReactionPickerPopup
+                      onSelect={(emoji) => handleToggleReaction(message.id, emoji)}
+                      onClose={() => setActiveReactionMessageId(null)}
+                    />
+                  )}
+                  <div className="relative">
+                    <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm message-selectable ${isMine ? 'rounded-br-xs bg-blue-600 text-white shadow-xs' : 'rounded-bl-xs border border-slate-200/70 bg-slate-100 text-slate-800 shadow-xs'}`}>
+                      {media ? (
+                        <MediaAttachmentPreview
+                          title={mediaLabel}
+                          mediaType={media.mediaType}
+                          isAdult={media.isAdult}
+                          isMine={isMine}
+                          viewState={sessionMedia.mediaViews[message.id]}
+                          busy={sessionMedia.mediaBusy}
+                          onView={() => void sessionMedia.openMediaPreview(message.id, media.mediaId, media.contentType)}
+                          onRevoke={() => void sessionMedia.revokeMediaPreview(message.id, media.mediaId)}
+                        />
+                      ) : (
+                        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveReactionMessageId(activeReactionMessageId === message.id ? null : message.id)}
+                      title="Thả biểu cảm"
+                      className={`absolute -top-2 ${
+                        isMine ? '-left-6' : '-right-6'
+                      } hidden group-hover/msg:flex items-center justify-center h-5 w-5 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 shadow-xs z-10 transition`}
+                    >
+                      <SmilePlus size={11} />
+                    </button>
+
+                    <ReactionBadges
+                      reactions={message.reactions}
+                      myUserId={currentUserId}
+                      isMine={isMine}
+                      onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
+                    />
                   </div>
+                  <time className="mt-1 px-1 text-[10px] text-slate-400 inline-flex items-center gap-1" dateTime={message.sentAt}>
+                    {formatTime(message.sentAt)}
+                    {isMine && (
+                      message.isRead ? (
+                        <CheckCheck size={12} className="text-blue-500 inline shrink-0" title="Đã xem" />
+                      ) : (
+                        <Check size={12} className="text-slate-400 inline shrink-0" title="Đã gửi" />
+                      )
+                    )}
+                  </time>
                 </div>
               );
             })}

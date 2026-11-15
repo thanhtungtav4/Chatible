@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import { SocketEvents } from '@chatible/shared';
 import type { ChatState, UserPublicProfile, SendMessageDto, TargetGender } from '@chatible/shared';
-import { Search, Send, UserPlus, Check, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft } from 'lucide-react';
+import { Search, Send, UserPlus, Check, CheckCheck, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft, SmilePlus } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '../../api.js';
 import { AdultReceiveConsentModal, AdultSenderCommitmentsModal } from '../media/AdultConsentModals.js';
 import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
@@ -12,7 +12,8 @@ import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionM
 import { useSmartAutoScroll } from './useSmartAutoScroll.js';
 import { triggerPushNotification, requestNotificationPermission } from '../notifications/pushNotification.js';
 import { triggerHaptic } from '../mobile/haptic.js';
-import { playMatchFoundSound, playMessageReceivedSound, playMessageSentSound } from '../audio/soundEffects.js';
+import { playMatchFoundSound, playMessageReceivedSound, playMessageSentSound, playReactionPopSound } from '../audio/soundEffects.js';
+import { ReactionPickerPopup, ReactionBadges } from './MessageReactionPicker.js';
 
 type MediaMessage = SessionMediaMeta;
 
@@ -32,7 +33,15 @@ function AudioWaveform({ samples, durationSec }: { samples: number[]; durationSe
     </div>
   );
 }
-type ChatMessage = { id: string; sender: 'me' | 'partner'; text: string; time: string; media?: MediaMessage };
+type ChatMessage = {
+  id: string;
+  sender: 'me' | 'partner';
+  text: string;
+  time: string;
+  media?: MediaMessage;
+  reactions?: Record<string, string>;
+  isRead?: boolean;
+};
 type ReportRequest = { sessionId: string; reportedUserId: string; evidenceMessageIds: string[] };
 
 const getAnonStorageKey = (userId: string) => `chatible_active_anon_session_${userId}`;
@@ -126,6 +135,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingEmittedRef = useRef(false);
   const stopTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeReactionMessageId, setActiveReactionMessageId] = useState<string | null>(null);
 
   const emitSocketMediaMessage = useCallback(async ({ media, isAdult }: { media: UploadedSessionMedia; isAdult: boolean }) => {
     const socket = socketRef.current;
@@ -361,6 +371,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       setIsPartnerTyping(false);
       triggerHaptic('light');
       playMessageReceivedSound();
+      socket.emit(SocketEvents.MESSAGE_READ);
       const mediaType = message.type === 'IMAGE' || message.type === 'AUDIO' || message.type === 'VIDEO'
         ? message.type
         : null;
@@ -398,6 +409,25 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     socket.on(SocketEvents.TYPING_STOP, () => {
       setIsPartnerTyping(false);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    });
+    socket.on(SocketEvents.MESSAGE_REACTION, (data: { messageId: string; emoji: string; userId: string }) => {
+      if (!data?.messageId) return;
+      playReactionPopSound();
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== data.messageId) return msg;
+          const currentReactions = { ...(msg.reactions || {}) };
+          if (currentReactions[data.userId] === data.emoji) {
+            delete currentReactions[data.userId];
+          } else {
+            currentReactions[data.userId] = data.emoji;
+          }
+          return { ...msg, reactions: currentReactions };
+        })
+      );
+    });
+    socket.on(SocketEvents.MESSAGE_READ, () => {
+      setMessages((prev) => prev.map((msg) => (msg.sender === 'me' ? { ...msg, isRead: true } : msg)));
     });
     socket.on(SocketEvents.MEDIA_CONSENT_UPDATE, (payload: { sessionId?: string; enabled?: boolean }) => {
       if (!payload?.sessionId || payload.sessionId === sessionIdRef.current) {
@@ -601,6 +631,25 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       setInputMessage('');
       playMessageSentSound();
     });
+  };
+
+  const handleToggleReaction = (messageId: string, emoji: string) => {
+    const socket = socketRef.current;
+    if (!socket?.connected) return;
+    socket.emit(SocketEvents.MESSAGE_REACTION, { messageId, emoji });
+    playReactionPopSound();
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId) return msg;
+        const currentReactions = { ...(msg.reactions || {}) };
+        if (currentReactions[currentUser.id] === emoji) {
+          delete currentReactions[currentUser.id];
+        } else {
+          currentReactions[currentUser.id] = emoji;
+        }
+        return { ...msg, reactions: currentReactions };
+      })
+    );
   };
 
   const handleEndChat = () => {
@@ -1042,37 +1091,72 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               )}
 
               {messages.map((message) => (
-                <div key={message.id} className={`flex flex-col ${message.sender === 'me' ? 'items-end' : 'items-start'}`}>
-                  <div
-                    className={`max-w-[80%] px-3.5 py-2.5 text-xs message-selectable ${
-                      message.sender === 'me'
-                        ? 'rounded-2xl rounded-br-xs bg-blue-600 text-white shadow-xs'
-                        : 'rounded-2xl rounded-bl-xs border border-slate-200/70 bg-slate-100 text-slate-900 shadow-xs'
-                    }`}
-                  >
-                    {message.media ? (
-                      <MediaAttachmentPreview
-                        title={message.text}
-                        mediaType={message.media.mediaType}
-                        isAdult={message.media.isAdult}
-                        isMine={message.sender === 'me'}
-                        viewState={sessionMedia.mediaViews[message.id]}
-                        revokedFallback={message.media.revoked}
-                        busy={sessionMedia.mediaBusy}
-                        audioExtra={
-                          message.media.waveform ? (
-                            <AudioWaveform samples={message.media.waveform} durationSec={message.media.durationSec} />
-                          ) : null
-                        }
-                        onView={() => void sessionMedia.openMediaPreview(message.id, message.media!.mediaId, message.media!.contentType)}
-                        onRevoke={() => {
-                          if (!message.media || message.sender !== 'me') return;
-                          void sessionMedia.revokeMediaPreview(message.id, message.media.mediaId);
-                        }}
-                      />
-                    ) : message.text}
+                <div key={message.id} className={`flex flex-col relative group/msg ${message.sender === 'me' ? 'items-end' : 'items-start'}`}>
+                  {activeReactionMessageId === message.id && (
+                    <ReactionPickerPopup
+                      onSelect={(emoji) => handleToggleReaction(message.id, emoji)}
+                      onClose={() => setActiveReactionMessageId(null)}
+                    />
+                  )}
+                  <div className="relative">
+                    <div
+                      className={`max-w-[80%] px-3.5 py-2.5 text-xs message-selectable ${
+                        message.sender === 'me'
+                          ? 'rounded-2xl rounded-br-xs bg-blue-600 text-white shadow-xs'
+                          : 'rounded-2xl rounded-bl-xs border border-slate-200/70 bg-slate-100 text-slate-900 shadow-xs'
+                      }`}
+                    >
+                      {message.media ? (
+                        <MediaAttachmentPreview
+                          title={message.text}
+                          mediaType={message.media.mediaType}
+                          isAdult={message.media.isAdult}
+                          isMine={message.sender === 'me'}
+                          viewState={sessionMedia.mediaViews[message.id]}
+                          revokedFallback={message.media.revoked}
+                          busy={sessionMedia.mediaBusy}
+                          audioExtra={
+                            message.media.waveform ? (
+                              <AudioWaveform samples={message.media.waveform} durationSec={message.media.durationSec} />
+                            ) : null
+                          }
+                          onView={() => void sessionMedia.openMediaPreview(message.id, message.media!.mediaId, message.media!.contentType)}
+                          onRevoke={() => {
+                            if (!message.media || message.sender !== 'me') return;
+                            void sessionMedia.revokeMediaPreview(message.id, message.media.mediaId);
+                          }}
+                        />
+                      ) : message.text}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveReactionMessageId(activeReactionMessageId === message.id ? null : message.id)}
+                      title="Thả biểu cảm"
+                      className={`absolute -top-2 ${
+                        message.sender === 'me' ? '-left-6' : '-right-6'
+                      } hidden group-hover/msg:flex items-center justify-center h-5 w-5 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 shadow-xs z-10 transition`}
+                    >
+                      <SmilePlus size={11} />
+                    </button>
+
+                    <ReactionBadges
+                      reactions={message.reactions}
+                      myUserId={currentUser.id}
+                      isMine={message.sender === 'me'}
+                      onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
+                    />
                   </div>
-                  <span className="mt-0.5 px-1 text-[9.5px] font-medium text-slate-400">{message.time}</span>
+                  <span className="mt-1 px-1 text-[9.5px] font-medium text-slate-400 inline-flex items-center gap-1">
+                    {message.time}
+                    {message.sender === 'me' && (
+                      message.isRead ? (
+                        <CheckCheck size={12} className="text-blue-500 inline shrink-0" title="Đã xem" />
+                      ) : (
+                        <Check size={12} className="text-slate-400 inline shrink-0" title="Đã gửi" />
+                      )
+                    )}
+                  </span>
                 </div>
               ))}
               {isPartnerTyping && (

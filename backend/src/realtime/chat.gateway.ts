@@ -766,7 +766,87 @@ export class ChatGateway {
         });
       });
 
-      // 11. Group / Channel subscription
+      // 11. Message Emoji Reactions
+      socket.on(SocketEvents.MESSAGE_REACTION, async (payload: { messageId: string; emoji: string; targetUserId?: string }) => {
+        if (!payload?.messageId || !payload?.emoji) return;
+        let recipientId = payload.targetUserId;
+        if (!recipientId) {
+          const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
+          if (session && session.state === 'CHATTING') {
+            recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
+          }
+        }
+        if (!recipientId || recipientId === authUser.userId) return;
+        this.io.to(this.userRoom(recipientId)).emit(SocketEvents.MESSAGE_REACTION, {
+          messageId: payload.messageId,
+          emoji: payload.emoji,
+          userId: authUser.userId,
+        });
+      });
+
+      // 12. Message Read Receipts
+      socket.on(SocketEvents.MESSAGE_READ, async (payload?: { messageId?: string; targetUserId?: string }) => {
+        let recipientId = payload?.targetUserId;
+        if (!recipientId) {
+          const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
+          if (session && session.state === 'CHATTING') {
+            recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
+          }
+        }
+        if (!recipientId || recipientId === authUser.userId) return;
+        this.io.to(this.userRoom(recipientId)).emit(SocketEvents.MESSAGE_READ, {
+          messageId: payload?.messageId,
+          readerId: authUser.userId,
+        });
+      });
+
+      // 13. WebRTC P2P Voice Calling (Friends)
+      socket.on(SocketEvents.CALL_OFFER, async (payload: { targetUserId: string; sdp: unknown }) => {
+        if (!payload?.targetUserId || !payload?.sdp) return;
+        if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) {
+          socket.emit(SocketEvents.CALL_REJECT, { targetUserId: payload.targetUserId, reason: 'Chỉ có thể gọi thoại khi đã là bạn bè.' });
+          return;
+        }
+        this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_OFFER, {
+          callerId: authUser.userId,
+          callerNickname: authUser.nickname,
+          callerGender: authUser.gender,
+          callerAge: authUser.age,
+          sdp: payload.sdp,
+        });
+      });
+
+      socket.on(SocketEvents.CALL_ANSWER, async (payload: { targetUserId: string; sdp: unknown }) => {
+        if (!payload?.targetUserId || !payload?.sdp) return;
+        this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_ANSWER, {
+          responderId: authUser.userId,
+          sdp: payload.sdp,
+        });
+      });
+
+      socket.on(SocketEvents.CALL_ICE_CANDIDATE, async (payload: { targetUserId: string; candidate: unknown }) => {
+        if (!payload?.targetUserId || !payload?.candidate) return;
+        this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_ICE_CANDIDATE, {
+          senderId: authUser.userId,
+          candidate: payload.candidate,
+        });
+      });
+
+      socket.on(SocketEvents.CALL_END, async (payload: { targetUserId: string }) => {
+        if (!payload?.targetUserId) return;
+        this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_END, {
+          senderId: authUser.userId,
+        });
+      });
+
+      socket.on(SocketEvents.CALL_REJECT, async (payload: { targetUserId: string }) => {
+        if (!payload?.targetUserId) return;
+        this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_REJECT, {
+          senderId: authUser.userId,
+        });
+      });
+
+      // 14. Group / Channel subscription
       socket.on(SocketEvents.GROUP_JOIN, async ({ roomId }: { roomId: string }, ack?: SocketAck) => {
         if (!roomId) return;
         if (this.groupAccessChecker && !(await this.groupAccessChecker(authUser.userId, roomId))) {
