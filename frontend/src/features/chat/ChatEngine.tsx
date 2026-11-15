@@ -92,6 +92,7 @@ interface ChatEngineProps {
     age: number;
     gender: string;
     preferredGender?: string;
+    preferredAgeMin?: number;
     preferredAgeMax?: number;
   };
   onOpenReport: (request: ReportRequest) => void;
@@ -104,6 +105,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const [targetGender, setTargetGender] = useState<TargetGender>(
     (currentUser.preferredGender as TargetGender) || 'ALL'
   );
+  const ageMin = currentUser.preferredAgeMin ?? 13;
   const [ageMax, setAgeMax] = useState<number>(currentUser.preferredAgeMax || 30);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [partner, setPartner] = useState<UserPublicProfile | null>(initialLocal?.partner ?? null);
@@ -563,7 +565,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     setChatState('WAITING');
     socket.emit(SocketEvents.MATCHING_JOIN, {
       targetGender,
-      ageMin: 18,
+      ageMin,
       ageMax,
       lastPartnerId: partner?.id,
     });
@@ -838,7 +840,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               Kết nối với <span className="text-blue-600">Sự Ẩn Danh</span>
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Mã hóa Envelope KMS • Ẩn danh 1–1 • Dành cho người 18+
+              Mã hóa Envelope KMS • Ẩn danh 1–1 • Dành cho người từ 13 tuổi trở lên
             </p>
           </div>
 
@@ -884,15 +886,16 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               <div className="flex items-center justify-between">
                 <label htmlFor={ageSliderId} className="text-xs font-bold text-slate-800">Khoảng tuổi tối đa</label>
                 <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700 border border-blue-200/60">
-                  18 – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
+                  {ageMin} – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
                 </span>
               </div>
               {/* Quick Age Presets */}
               <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-0.5">
                 {[
-                  { label: '18–25t', val: 25 },
-                  { label: '18–30t', val: 30 },
-                  { label: '18–40t', val: 40 },
+                  { label: `${ageMin}–18t`, val: 18 },
+                  { label: `${ageMin}–25t`, val: 25 },
+                  { label: `${ageMin}–30t`, val: 30 },
+                  { label: `${ageMin}–40t`, val: 40 },
                   { label: 'Tất cả 50+', val: 50 },
                 ].map((preset) => (
                   <button
@@ -916,15 +919,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                 <input
                   id={ageSliderId}
                   type="range"
-                  min="18"
+                  min={String(ageMin)}
                   max="50"
                   value={ageMax}
                   onChange={(e) => setAgeMax(Number(e.target.value))}
                   className="w-full accent-blue-600 cursor-pointer"
                 />
                 <div className="mt-1 flex justify-between text-[10px] font-semibold text-slate-400">
-                  <span>18 tuổi</span>
-                  <span className="text-slate-500">Mặc định 18–30</span>
+                  <span>{ageMin} tuổi</span>
+                  <span className="text-slate-500">Mặc định {ageMin}–30</span>
                   <span>50+</span>
                 </div>
               </div>
@@ -965,7 +968,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
               : targetGender === 'MALE'
               ? 'Nam'
               : 'Khác'}{' '}
-            • 18 – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
+            • {ageMin} – {ageMax >= 50 ? '50+' : `${ageMax} tuổi`}
             {isFilterExpanded && <span className="ml-1 font-semibold text-emerald-600">(Đã mở rộng)</span>}
           </p>
 
@@ -987,7 +990,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                 <span>Đã mở rộng bộ lọc tối đa</span>
               </span>
               <p className="mt-1 text-center text-[11px] text-emerald-700 font-medium">
-                Đang quét ghép đôi nhanh nhất với mọi đối tượng trực tuyến (18–80 tuổi)
+                Đang quét ghép đôi nhanh nhất với mọi đối tượng trực tuyến ({ageMin}–80 tuổi)
               </p>
             </div>
           ) : (

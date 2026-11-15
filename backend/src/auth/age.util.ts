@@ -40,14 +40,30 @@ export class AgeUtil {
     return age;
   }
 
+  static readonly MIN_AGE = 13;
+
   /**
-   * Validate that the user is at least 18 years old
+   * Validate that the user is at least 13 years old (Chatible platform minimum age)
    */
-  static validateIsAdult(birthDateStr: string, referenceDate: Date = new Date()): number {
+  static validateEligibleAge(birthDateStr: string, referenceDate: Date = new Date()): number {
     const age = this.calculateAge(birthDateStr, referenceDate);
-    if (age < 18) {
-      throw new Error('Người dùng phải từ đủ 18 tuổi trở lên để sử dụng nền tảng Chatible.');
+    if (age < AgeUtil.MIN_AGE) {
+      throw new Error(`Người dùng phải từ đủ ${AgeUtil.MIN_AGE} tuổi trở lên để sử dụng nền tảng Chatible.`);
     }
     return age;
+  }
+
+  /**
+   * Backward-compatible alias for minimum platform age validation (>= 13)
+   */
+  static validateIsAdult(birthDateStr: string, referenceDate: Date = new Date()): number {
+    return this.validateEligibleAge(birthDateStr, referenceDate);
+  }
+
+  /**
+   * Check if user is legally an adult (>= 18) for adult media / NSFW consent
+   */
+  static isAdult(age: number): boolean {
+    return age >= 18;
   }
 }

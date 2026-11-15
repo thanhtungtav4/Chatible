@@ -20,7 +20,7 @@ export const profiles = pgTable('profiles', {
   calculatedAge: integer('calculated_age').notNull(),
 
   preferredGender: varchar('preferred_gender', { length: 10 }).default('ALL').notNull(),
-  preferredAgeMin: integer('preferred_age_min').default(18).notNull(),
+  preferredAgeMin: integer('preferred_age_min').default(13).notNull(),
   preferredAgeMax: integer('preferred_age_max').default(30).notNull(),
   mediaConsentDefault: boolean('media_consent_default').default(false).notNull(),
   // A convenience privacy lock for the recent-sessions screen. Never store its PIN in plaintext.

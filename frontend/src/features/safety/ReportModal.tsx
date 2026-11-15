@@ -20,9 +20,9 @@ interface ReasonOption {
 const REASONS: ReasonOption[] = [
   {
     value: 'UNDERAGE',
-    label: 'Chưa đủ 18 tuổi',
-    description: 'Nghi vấn người này chưa đủ tuổi thành niên tham gia nền tảng',
-    icon: '🔞',
+    label: 'Chưa đủ 13 tuổi (Trẻ em)',
+    description: 'Nghi vấn người dùng này chưa đủ 13 tuổi tham gia nền tảng',
+    icon: '🚸',
   },
   {
     value: 'HARASSMENT',

@@ -374,6 +374,7 @@ export default function App() {
                       age: userProfile.age,
                       gender: userProfile.gender,
                       preferredGender: userProfile.preferredGender,
+                      preferredAgeMin: userProfile.preferredAgeMin,
                       preferredAgeMax: userProfile.preferredAgeMax,
                     }}
                     onOpenReport={handleReport}

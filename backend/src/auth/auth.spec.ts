@@ -14,10 +14,10 @@ import { emailVerificationTokens, profiles, users } from '../database/schema/use
 import { CSRF_COOKIE_NAME, registerCsrfOriginProtection, SESSION_COOKIE_NAME } from './session-auth.util.js';
 import { eq } from 'drizzle-orm';
 
-describe('Phase 3: Auth 18+ Security & Policy Tests (T012, T014, T017)', () => {
+describe('Phase 3: Auth 13+ Security & Policy Tests (T012, T014, T017)', () => {
   const referenceDate = new Date('2026-11-08');
 
-  it('T012: Correctly computes age >= 18 from birthDate', () => {
+  it('T012: Correctly computes age >= 13 from birthDate', () => {
     // Born 2004-03-15 on 2026-11-08 is 22 years old
     const age = AgeUtil.calculateAge('2004-03-15', referenceDate);
     expect(age).toBe(22);
@@ -26,13 +26,13 @@ describe('Phase 3: Auth 18+ Security & Policy Tests (T012, T014, T017)', () => {
     expect(validatedAge).toBe(22);
   });
 
-  it('T017: Chặn ngay nếu khai ngày sinh < 18 tuổi (Underage rejection)', () => {
-    // Born 2010-05-20 on 2026-11-08 is 16 years old
-    const age = AgeUtil.calculateAge('2010-05-20', referenceDate);
-    expect(age).toBe(16);
+  it('T017: Chặn ngay nếu khai ngày sinh < 13 tuổi (Underage rejection)', () => {
+    // Born 2015-05-20 on 2026-11-08 is 11 years old
+    const age = AgeUtil.calculateAge('2015-05-20', referenceDate);
+    expect(age).toBe(11);
 
-    expect(() => AgeUtil.validateIsAdult('2010-05-20', referenceDate)).toThrow(
-      'Người dùng phải từ đủ 18 tuổi trở lên để sử dụng nền tảng Chatible.'
+    expect(() => AgeUtil.validateIsAdult('2015-05-20', referenceDate)).toThrow(
+      'Người dùng phải từ đủ 13 tuổi trở lên để sử dụng nền tảng Chatible.'
     );
   });
 
@@ -41,12 +41,12 @@ describe('Phase 3: Auth 18+ Security & Policy Tests (T012, T014, T017)', () => {
       'Ngày sinh không thể nằm trong tương lai.'
     );
   });
-  it('rejects impossible dates and uses the UTC birthday boundary for 18+', () => {
-    expect(AgeUtil.calculateAge('2008-11-08', referenceDate)).toBe(18);
-    expect(AgeUtil.validateIsAdult('2008-11-08', referenceDate)).toBe(18);
-    expect(AgeUtil.calculateAge('2008-11-09', referenceDate)).toBe(17);
-    expect(() => AgeUtil.validateIsAdult('2008-11-09', referenceDate)).toThrow(
-      'Người dùng phải từ đủ 18 tuổi trở lên để sử dụng nền tảng Chatible.'
+  it('rejects impossible dates and uses the UTC birthday boundary for 13+', () => {
+    expect(AgeUtil.calculateAge('2013-11-08', referenceDate)).toBe(13);
+    expect(AgeUtil.validateIsAdult('2013-11-08', referenceDate)).toBe(13);
+    expect(AgeUtil.calculateAge('2013-11-09', referenceDate)).toBe(12);
+    expect(() => AgeUtil.validateIsAdult('2013-11-09', referenceDate)).toThrow(
+      'Người dùng phải từ đủ 13 tuổi trở lên để sử dụng nền tảng Chatible.'
     );
     expect(() => AgeUtil.calculateAge('2008-02-30', referenceDate)).toThrow('YYYY-MM-DD');
     expect(() => AgeUtil.calculateAge('2008/01/01', referenceDate)).toThrow('YYYY-MM-DD');

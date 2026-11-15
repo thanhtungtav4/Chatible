@@ -9,6 +9,7 @@ import {
   PhoneOff,
   Video,
   VideoOff,
+  Wifi,
 } from 'lucide-react';
 import { useCall } from './CallContext.js';
 
@@ -32,6 +33,8 @@ export function CallOverlay() {
     isMicMuted,
     isCameraOff,
     isMinimized,
+    isReconnecting,
+    networkQuality,
     callError,
     localStream,
     remoteStream,
@@ -178,10 +181,20 @@ export function CallOverlay() {
       {/* 3. Active Call - Minimized Floating Pill */}
       {callState === 'active' && isMinimized && activePartner && (
         <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[95] flex items-center gap-2.5 rounded-full border border-slate-700/60 bg-slate-900/95 px-4 py-2.5 text-white shadow-2xl backdrop-blur-xl animate-in slide-in-from-bottom-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span
+            className={`h-2.5 w-2.5 rounded-full animate-pulse ${
+              isReconnecting ? 'bg-amber-400' : 'bg-emerald-400'
+            }`}
+          />
           <div className="text-left">
             <p className="max-w-[110px] truncate text-xs font-bold">{activePartner.nickname}</p>
-            <p className="text-[10px] text-emerald-400">{formatDuration(callDuration)}</p>
+            <p
+              className={`text-[10px] ${
+                isReconnecting ? 'text-amber-400 font-semibold' : 'text-emerald-400'
+              }`}
+            >
+              {isReconnecting ? 'Đang kết nối lại…' : formatDuration(callDuration)}
+            </p>
           </div>
 
           <div className="ml-1 flex items-center gap-1 border-l border-slate-700 pl-2">
@@ -220,7 +233,7 @@ export function CallOverlay() {
       {/* 4. Active Call - Full Screen / Modal View */}
       {callState === 'active' && !isMinimized && activePartner && (
         <div
-          className="fixed inset-0 z-[90] flex flex-col bg-slate-950/90 backdrop-blur-xl animate-in fade-in"
+          className="fixed inset-0 z-[90] flex flex-col bg-slate-950/95 backdrop-blur-2xl animate-in fade-in"
           role="dialog"
           aria-modal="true"
           aria-label="Cuộc gọi đang diễn ra"
@@ -228,13 +241,50 @@ export function CallOverlay() {
           {/* Top Bar */}
           <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-3 sm:px-6">
             <div className="flex items-center gap-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span
+                className={`h-2.5 w-2.5 rounded-full animate-pulse ${
+                  isReconnecting ? 'bg-amber-400' : 'bg-emerald-400'
+                }`}
+              />
               <div>
                 <h2 className="text-sm font-bold text-white sm:text-base">{activePartner.nickname}</h2>
-                <p className="text-xs text-slate-400">
-                  {callType === 'video' ? 'Gọi Video P2P' : 'Gọi Thoại P2P'} •{' '}
-                  <span className="font-semibold text-emerald-400">{formatDuration(callDuration)}</span>
-                </p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                  <span>
+                    {callType === 'video' ? 'Gọi Video P2P' : 'Gọi Thoại P2P'} •{' '}
+                    <span className="font-semibold text-emerald-400">
+                      {formatDuration(callDuration)}
+                    </span>
+                  </span>
+
+                  {/* Network Quality Badge */}
+                  {networkQuality && !isReconnecting && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                        networkQuality === 'good'
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : networkQuality === 'fair'
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'bg-rose-500/20 text-rose-400 animate-pulse'
+                      }`}
+                      title={
+                        networkQuality === 'good'
+                          ? 'Chất lượng mạng tốt'
+                          : networkQuality === 'fair'
+                          ? 'Chất lượng mạng trung bình'
+                          : 'Chất lượng mạng yếu'
+                      }
+                    >
+                      <Wifi size={10} />
+                      <span>
+                        {networkQuality === 'good'
+                          ? 'Mạng tốt'
+                          : networkQuality === 'fair'
+                          ? 'Mạng vừa'
+                          : 'Mạng yếu'}
+                      </span>
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -248,6 +298,14 @@ export function CallOverlay() {
               <span className="hidden sm:inline">Thu nhỏ</span>
             </button>
           </div>
+
+          {/* Reconnecting Alert Banner */}
+          {isReconnecting && (
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full bg-amber-500/20 px-4 py-1.5 text-xs font-semibold text-amber-300 border border-amber-500/40 backdrop-blur-md shadow-xl animate-pulse">
+              <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+              <span>Mạng chập chờn, đang tự động kết nối lại…</span>
+            </div>
+          )}
 
           {/* Main Content Area */}
           <div className="relative flex flex-1 items-center justify-center p-4 overflow-hidden">

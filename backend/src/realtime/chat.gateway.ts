@@ -317,7 +317,7 @@ export class ChatGateway {
         const token = cookieToken ? String(cookieToken).trim() : '';
 
         if (!token) {
-          return next(new Error('Yêu cầu đăng nhập và xác thực tài khoản 18+ (Cookie required).'));
+          return next(new Error('Yêu cầu đăng nhập và xác thực tài khoản (Cookie required).'));
         }
 
         const decoded = await verifyUserSessionToken(token);
@@ -333,8 +333,8 @@ export class ChatGateway {
           where: eq(profiles.userId, user.id),
         });
 
-        if (!profile || profile.calculatedAge < 18) {
-          return next(new Error('Người dùng phải từ đủ 18 tuổi trở lên.'));
+        if (!profile || profile.calculatedAge < 13) {
+          return next(new Error('Người dùng phải từ đủ 13 tuổi trở lên.'));
         }
 
         (socket as AuthenticatedSocket).authUser = {
@@ -392,7 +392,7 @@ export class ChatGateway {
           gender: authUser.gender,
           age: authUser.age,
           targetGender: payload?.targetGender || 'ALL',
-          ageMin: payload?.ageMin || 18,
+          ageMin: payload?.ageMin || 13,
           ageMax: payload?.ageMax || 30,
           lastPartnerId: payload?.lastPartnerId,
           enqueuedAt: Date.now(),

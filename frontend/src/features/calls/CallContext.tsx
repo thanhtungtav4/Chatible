@@ -7,6 +7,7 @@ import { triggerHaptic } from '../mobile/haptic.js';
 
 export type CallType = 'voice' | 'video';
 export type CallState = 'idle' | 'outgoing' | 'incoming' | 'active';
+export type NetworkQuality = 'good' | 'fair' | 'poor';
 
 export interface CallPartner {
   id: string;
@@ -22,6 +23,8 @@ interface CallContextType {
   isMicMuted: boolean;
   isCameraOff: boolean;
   isMinimized: boolean;
+  isReconnecting: boolean;
+  networkQuality: NetworkQuality | null;
   callError: string | null;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
@@ -41,8 +44,52 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
   ],
+  iceCandidatePoolSize: 10,
 };
+
+const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  sampleRate: 48000,
+  channelCount: 1,
+};
+
+const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1280, max: 1280 },
+  height: { ideal: 720, max: 720 },
+  frameRate: { ideal: 24, max: 30 },
+  facingMode: 'user',
+};
+
+/**
+ * Optimizes Opus codec parameters in SDP: enables Forward Error Correction (FEC)
+ * and Discontinuous Transmission (DTX) for smooth voice over packet loss.
+ */
+function optimizeOpusSdp(sdp: string): string {
+  const match = sdp.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
+  if (!match) return sdp;
+  const pt = match[1];
+  const fmtpRegex = new RegExp(`a=fmtp:${pt}\\s+(.+)`, 'i');
+  if (fmtpRegex.test(sdp)) {
+    return sdp.replace(fmtpRegex, (line) => {
+      let updated = line;
+      if (!updated.includes('useinbandfec=1')) updated += ';useinbandfec=1';
+      if (!updated.includes('usedtx=1')) updated += ';usedtx=1';
+      if (!updated.includes('maxaveragebitrate=')) updated += ';maxaveragebitrate=32000';
+      return updated;
+    });
+  } else {
+    return sdp.replace(
+      new RegExp(`(a=rtpmap:${pt}\\s+opus\/48000\/2\r?\n)`, 'i'),
+      `$1a=fmtp:${pt} useinbandfec=1;usedtx=1;maxaveragebitrate=32000\r\n`
+    );
+  }
+}
 
 export function CallProvider({
   children,
@@ -59,6 +106,8 @@ export function CallProvider({
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [networkQuality, setNetworkQuality] = useState<NetworkQuality | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -71,6 +120,8 @@ export function CallProvider({
   const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const callStateRef = useRef(callState);
   callStateRef.current = callState;
@@ -88,6 +139,14 @@ export function CallProvider({
     if (ringTimeoutRef.current) {
       clearTimeout(ringTimeoutRef.current);
       ringTimeoutRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
     }
 
     if (localStreamRef.current) {
@@ -117,9 +176,103 @@ export function CallProvider({
     setIsMicMuted(false);
     setIsCameraOff(false);
     setIsMinimized(false);
+    setIsReconnecting(false);
+    setNetworkQuality(null);
     setCallerInfo(null);
     setPartnerInfo(null);
   }, []);
+
+  const startStatsMonitoring = useCallback((pc: RTCPeerConnection) => {
+    if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+    let prevPacketsLost = 0;
+    let prevPacketsReceived = 0;
+
+    statsIntervalRef.current = setInterval(async () => {
+      if (pc.connectionState !== 'connected') return;
+      try {
+        const stats = await pc.getStats();
+        let rttMs = 0;
+        let lossPercent = 0;
+
+        stats.forEach((report) => {
+          if (
+            report.type === 'candidate-pair' &&
+            report.state === 'succeeded' &&
+            typeof report.currentRoundTripTime === 'number'
+          ) {
+            rttMs = report.currentRoundTripTime * 1000;
+          }
+          if (
+            report.type === 'inbound-rtp' &&
+            (report.kind === 'audio' || report.kind === 'video')
+          ) {
+            const lost = (report.packetsLost as number) || 0;
+            const recv = (report.packetsReceived as number) || 0;
+            const deltaLost = Math.max(0, lost - prevPacketsLost);
+            const deltaRecv = Math.max(0, recv - prevPacketsReceived);
+            prevPacketsLost = lost;
+            prevPacketsReceived = recv;
+            const total = deltaLost + deltaRecv;
+            if (total > 0) {
+              lossPercent = (deltaLost / total) * 100;
+            }
+          }
+        });
+
+        if (rttMs > 350 || lossPercent > 8) {
+          setNetworkQuality('poor');
+        } else if (rttMs > 180 || lossPercent > 3) {
+          setNetworkQuality('fair');
+        } else if (rttMs > 0) {
+          setNetworkQuality('good');
+        }
+      } catch {
+        // ignore stats errors
+      }
+    }, 2500);
+  }, []);
+
+  const setupConnectionMonitoring = useCallback(
+    (pc: RTCPeerConnection) => {
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'connected') {
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+          setIsReconnecting(false);
+          startStatsMonitoring(pc);
+        } else if (state === 'disconnected') {
+          // Network fluctuation: do not disconnect immediately!
+          // Allow up to 6 seconds for ICE reconnection / candidate switching.
+          setIsReconnecting(true);
+          if (!reconnectTimeoutRef.current) {
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (
+                peerConnectionRef.current?.connectionState === 'disconnected' ||
+                peerConnectionRef.current?.connectionState === 'failed'
+              ) {
+                playCallEndedSound();
+                cleanupCall();
+                setCallError('Mất kết nối với đối phương do mạng chập chờn.');
+                setTimeout(() => setCallError(null), 4000);
+              }
+            }, 6000);
+          }
+        } else if (state === 'failed' || state === 'closed') {
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+          setIsReconnecting(false);
+          playCallEndedSound();
+          cleanupCall();
+        }
+      };
+    },
+    [cleanupCall, startStatsMonitoring]
+  );
 
   const endCall = useCallback(() => {
     const activeTarget = partnerInfoRef.current?.id || callerInfoRef.current?.id;
@@ -162,8 +315,8 @@ export function CallProvider({
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: type === 'video',
+          audio: AUDIO_CONSTRAINTS,
+          video: type === 'video' ? VIDEO_CONSTRAINTS : false,
         });
         localStreamRef.current = stream;
         setLocalStream(stream);
@@ -189,19 +342,18 @@ export function CallProvider({
           }
         };
 
-        pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-            playCallEndedSound();
-            cleanupCall();
-          }
-        };
+        setupConnectionMonitoring(pc);
 
         const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        const optimizedOffer: RTCSessionDescriptionInit = {
+          type: offer.type,
+          sdp: optimizeOpusSdp(offer.sdp || ''),
+        };
+        await pc.setLocalDescription(optimizedOffer);
 
         socketRef.current?.emit(SocketEvents.CALL_OFFER, {
           targetUserId: target.id,
-          sdp: offer,
+          sdp: optimizedOffer,
           callType: type,
         });
 
@@ -220,7 +372,7 @@ export function CallProvider({
         setTimeout(() => setCallError(null), 4000);
       }
     },
-    [cleanupCall]
+    [cleanupCall, endCall, setupConnectionMonitoring]
   );
 
   const acceptCall = useCallback(async () => {
@@ -236,8 +388,8 @@ export function CallProvider({
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: callType === 'video',
+        audio: AUDIO_CONSTRAINTS,
+        video: callType === 'video' ? VIDEO_CONSTRAINTS : false,
       });
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -263,12 +415,7 @@ export function CallProvider({
         }
       };
 
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          playCallEndedSound();
-          cleanupCall();
-        }
-      };
+      setupConnectionMonitoring(pc);
 
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
       if (pendingIceCandidatesRef.current.length > 0) {
@@ -283,11 +430,15 @@ export function CallProvider({
       }
 
       const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      const optimizedAnswer: RTCSessionDescriptionInit = {
+        type: answer.type,
+        sdp: optimizeOpusSdp(answer.sdp || ''),
+      };
+      await pc.setLocalDescription(optimizedAnswer);
 
       socketRef.current?.emit(SocketEvents.CALL_ANSWER, {
         targetUserId: caller.id,
-        sdp: answer,
+        sdp: optimizedAnswer,
       });
 
       setPartnerInfo(caller);
@@ -303,7 +454,7 @@ export function CallProvider({
       setCallError(msg);
       setTimeout(() => setCallError(null), 4000);
     }
-  }, [callType, cleanupCall]);
+  }, [callType, cleanupCall, setupConnectionMonitoring]);
 
   const toggleMic = useCallback(() => {
     if (localStreamRef.current) {
@@ -401,6 +552,7 @@ export function CallProvider({
             callTimerRef.current = setInterval(() => {
               setCallDuration((prev) => prev + 1);
             }, 1000);
+            startStatsMonitoring(peerConnectionRef.current);
             triggerHaptic('success');
           } catch {
             cleanupCall();
@@ -469,6 +621,8 @@ export function CallProvider({
         isMicMuted,
         isCameraOff,
         isMinimized,
+        isReconnecting,
+        networkQuality,
         callError,
         localStream,
         remoteStream,

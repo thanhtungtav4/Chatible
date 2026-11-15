@@ -145,7 +145,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   };
 
   const currentAge = birthDate ? computeAge(birthDate) : 0;
-  const isAdult = currentAge >= 18;
+  const isAdult = currentAge >= 13;
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -244,8 +244,8 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           return;
         }
 
-        // If user is new, backend requires birthDate (18+ verification)
-        if (data.error && data.error.includes('18+')) {
+        // If user is new, backend requires birthDate (13+ verification)
+        if (data.error && (data.error.includes('18+') || data.error.includes('13') || data.error.includes('ngày sinh'))) {
           setMode('GOOGLE_ONBOARD');
           return;
         }
@@ -337,10 +337,10 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
 
     try {
       if (!isAdult) {
-        throw new Error('Người dùng phải từ đủ 18 tuổi trở lên để tham gia.');
+        throw new Error('Người dùng phải từ đủ 13 tuổi trở lên để tham gia.');
       }
       if (!policyAccepted) {
-        throw new Error('Bạn cần đồng ý với chính sách 18+ và điều khoản sử dụng.');
+        throw new Error('Bạn cần đồng ý với chính sách và điều khoản sử dụng.');
       }
       if (!googleIdToken) {
         throw new Error('Không tìm thấy phiên xác thực Google. Vui lòng đăng nhập lại.');
@@ -378,10 +378,10 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     try {
       if (mode === 'REGISTER') {
         if (!isAdult) {
-          throw new Error('Người dùng phải từ đủ 18 tuổi trở lên để tham gia Chatible.');
+          throw new Error('Người dùng phải từ đủ 13 tuổi trở lên để tham gia Chatible.');
         }
         if (!policyAccepted) {
-          throw new Error('Bạn cần đồng ý với chính sách 18+ và điều khoản sử dụng.');
+          throw new Error('Bạn cần đồng ý với chính sách và điều khoản sử dụng.');
         }
         if (password.length < 8) {
           throw new Error('Mật khẩu tối thiểu 8 ký tự.');
@@ -488,7 +488,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             ? 'Xác minh địa chỉ email'
             : mode === 'LOGIN'
               ? 'Đăng nhập tài khoản'
-              : 'Đăng ký tài khoản (18+)';
+              : 'Đăng ký tài khoản (13+)';
 
   return (
     <dialog
@@ -553,7 +553,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                     mode === 'REGISTER' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
                   }`}
                 >
-                  Đăng ký (18+)
+                  Đăng ký (13+)
                 </button>
                 <button
                   type="button"
@@ -597,7 +597,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             {mode === 'GOOGLE_ONBOARD' && (
               <div className="mb-4 text-center">
                 <p className="text-xs text-slate-500">
-                  Chatible chỉ dành cho người từ đủ 18 tuổi. Vui lòng xác nhận ngày sinh của bạn.
+                  Chatible dành cho người từ đủ 13 tuổi trở lên. Vui lòng xác nhận ngày sinh của bạn.
                 </p>
               </div>
             )}
@@ -836,7 +836,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                           isAdult ? 'text-emerald-600' : 'text-rose-600'
                         }`}
                       >
-                        {currentAge} tuổi {isAdult ? '• Đủ 18+' : '• Chưa đủ 18'}
+                        {currentAge} tuổi {isAdult ? '• Đủ 13+' : '• Chưa đủ 13'}
                       </span>
                     )}
                   </div>
@@ -863,7 +863,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                     className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
                   />
                   <label htmlFor={fieldId('google-policy')} className="cursor-pointer">
-                    Tôi xác nhận đủ 18 tuổi và đồng ý với{' '}
+                    Tôi xác nhận từ đủ 13 tuổi trở lên và đồng ý với{' '}
                     <a
                       href="/terms"
                       target="_blank"
@@ -879,7 +879,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                       rel="noopener noreferrer"
                       className="text-blue-600 font-semibold underline hover:text-blue-700"
                     >
-                      Chính sách 18+
+                      Chính sách bảo mật
                     </a>{' '}
                     của Chatible.
                   </label>
@@ -890,7 +890,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                   disabled={isLoading || !isAdult || !policyAccepted}
                   className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-blue-600 py-3 text-xs font-bold text-white shadow-lg shadow-blue-500/30 transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
                 >
-                  <span>{isLoading ? 'Đang xác thực...' : 'Hoàn tất Đăng ký 18+'}</span>
+                  <span>{isLoading ? 'Đang xác thực...' : 'Hoàn tất Đăng ký (13+)'}</span>
                 </button>
               </form>
             )}
@@ -947,7 +947,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                               isAdult ? 'text-emerald-600' : 'text-rose-600'
                             }`}
                           >
-                            {currentAge} tuổi {isAdult ? '• Đủ 18+' : '• Chưa đủ 18'}
+                            {currentAge} tuổi {isAdult ? '• Đủ 13+' : '• Chưa đủ 13'}
                           </span>
                         )}
                       </div>
@@ -1028,7 +1028,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                       className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <label htmlFor={fieldId('auth-policy')} className="cursor-pointer">
-                      Tôi xác nhận đủ 18 tuổi và đồng ý với{' '}
+                      Tôi xác nhận từ đủ 13 tuổi trở lên và đồng ý với{' '}
                       <a
                         href="/terms"
                         target="_blank"
@@ -1044,7 +1044,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                         rel="noopener noreferrer"
                         className="text-blue-600 font-semibold underline hover:text-blue-700"
                       >
-                        Chính sách 18+
+                        Chính sách bảo mật
                       </a>{' '}
                       của Chatible.
                     </label>
@@ -1057,7 +1057,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                   className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-blue-600 py-3 text-xs font-bold text-white shadow-lg shadow-blue-500/30 transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
                 >
                   <ShieldCheck size={16} aria-hidden="true" />
-                  <span>{mode === 'REGISTER' ? 'Hoàn tất Đăng ký 18+' : 'Đăng nhập'}</span>
+                  <span>{mode === 'REGISTER' ? 'Hoàn tất Đăng ký (13+)' : 'Đăng nhập'}</span>
                 </button>
 
                 {/* Google Sign-In Divider & Button (only if Google Auth is enabled by Admin) */}

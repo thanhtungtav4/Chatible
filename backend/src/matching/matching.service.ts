@@ -123,7 +123,7 @@ export class MatchingEngine {
       if (!encoded) return null;
       const user = this.parseUser(encoded);
       user.allowExpansion = true;
-      user.ageMin = Math.max(18, user.ageMin - 5);
+      user.ageMin = Math.max(13, user.ageMin - 5);
       user.ageMax = Math.min(80, Math.max(user.ageMax + 5, 50));
       user.lastPartnerId = undefined; // Relax previous partner restriction
       await this.redis.hset(this.queueKey, user.userId, JSON.stringify(user));
@@ -300,7 +300,7 @@ export class MatchingEngine {
   private async findMatch(candidateA: QueuedUser): Promise<QueuedUser | null> {
     const bucketKeys = this.compatibleBucketKeysFor(candidateA);
     const bucketPipeline = this.redis.pipeline();
-    const queryAgeMin = candidateA.allowExpansion ? 18 : candidateA.ageMin;
+    const queryAgeMin = candidateA.allowExpansion ? 13 : candidateA.ageMin;
     const queryAgeMax = candidateA.allowExpansion ? 99 : candidateA.ageMax;
     for (const bucketKey of bucketKeys) {
       bucketPipeline.zrangebyscore(bucketKey, queryAgeMin, queryAgeMax);

@@ -69,14 +69,15 @@ export function TermsOfServiceView({ onBack }: LegalPageProps) {
           <section className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
             <div className="flex items-center gap-3 text-amber-400 font-bold text-lg mb-4">
               <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-              <h2>2. Yêu cầu Bắt buộc về Độ tuổi (18+)</h2>
+              <h2>2. Yêu cầu Bắt buộc về Độ tuổi (13+)</h2>
             </div>
             <p className="mb-3">
-              <strong>Chatible CHỈ DÀNH CHO CÁC CÁ NHÂN TỪ ĐỦ 18 TUỔI TRỞ LÊN.</strong>
+              <strong>Chatible CHỈ DÀNH CHO CÁC CÁ NHÂN TỪ ĐỦ 13 TUỔI TRỞ LÊN.</strong>
             </p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Bạn phải cam kết khai báo ngày sinh chính xác khi đăng ký tài khoản. Mọi hành vi gian lận độ tuổi sẽ dẫn đến việc đình chỉ hoặc xóa tài khoản vĩnh viễn không cần báo trước.</li>
-              <li>Chúng tôi áp dụng chính sách <strong>Không khoan nhượng (Zero Tolerance)</strong> đối với sự hiện diện hoặc bất kỳ nội dung nào liên quan đến người dưới 18 tuổi trên nền tảng.</li>
+              <li>Hệ thống từ chối cung cấp dịch vụ đối với người dùng dưới 13 tuổi nhằm tuân thủ quy định bảo vệ trẻ em trên không gian mạng.</li>
+              <li>Đối với tính năng chia sẻ và nhận nội dung người lớn/nhạy cảm (18+), người dùng bắt buộc phải từ đủ 18 tuổi trở lên và xác nhận đồng thuận hai bên rõ ràng theo quy định pháp luật.</li>
             </ul>
           </section>
 
@@ -115,7 +116,7 @@ export function TermsOfServiceView({ onBack }: LegalPageProps) {
             </div>
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Hàng đợi công bằng (FIFO):</strong> Thuật toán ghép đôi phục vụ người dùng theo thứ tự chờ công bằng, dựa trên tiêu chí giới tính và độ tuổi lựa chọn.</li>
-              <li><strong>Đồng thuận nhận phương tiện:</strong> Người dùng có toàn quyền tắt hoặc bật tùy chọn đồng thuận nhận hình ảnh/âm thanh người lớn (18+). Chỉ khi cả 2 bên cùng đồng thuận thì tính năng chia sẻ media mới được mở khóa.</li>
+              <li><strong>Đồng thuận nhận phương tiện:</strong> Người dùng có toàn quyền tắt hoặc bật tùy chọn đồng thuận nhận hình ảnh/âm thanh người lớn (18+). Chỉ người dùng từ đủ 18 tuổi trở lên và khi cả 2 bên cùng đồng thuận thì tính năng chia sẻ media nhạy cảm mới được mở khóa.</li>
               <li><strong>Tính riêng tư của phiên chat:</strong> Tin nhắn chat ngẫu nhiên được mã hóa và sẽ bị tiêu hủy khi phiên kết thúc. Người dùng chịu trách nhiệm về nội dung trao đổi của chính mình.</li>
             </ul>
           </section>

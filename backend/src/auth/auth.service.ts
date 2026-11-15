@@ -82,7 +82,7 @@ export class AuthService {
     }
 
     if (!dto.policyAccepted) {
-      throw new Error('Bạn phải đồng ý với Điều khoản và Chính sách 18+ của Chatible.');
+      throw new Error('Bạn phải đồng ý với Điều khoản và Chính sách của Chatible.');
     }
 
     if (dto.password.length < 8) {
@@ -123,7 +123,7 @@ export class AuthService {
         birthDate: dto.birthDate,
         calculatedAge,
         preferredGender: 'ALL',
-        preferredAgeMin: 18,
+        preferredAgeMin: 13,
         preferredAgeMax: 30,
         mediaConsentDefault: false,
       })
@@ -305,7 +305,7 @@ export class AuthService {
     }
     if (!user) {
       if (!dto.birthDate) {
-        throw new Error('Đăng ký lần đầu qua Google bắt buộc phải khai báo ngày sinh 18+.');
+        throw new Error('Đăng ký lần đầu qua Google bắt buộc phải khai báo ngày sinh (từ đủ 13 tuổi trở lên).');
       }
 
       const age = AgeUtil.validateIsAdult(dto.birthDate);
@@ -329,7 +329,7 @@ export class AuthService {
         birthDate: dto.birthDate,
         calculatedAge: age,
         preferredGender: 'ALL',
-        preferredAgeMin: 18,
+        preferredAgeMin: 13,
         preferredAgeMax: 30,
         mediaConsentDefault: false,
       });
@@ -450,8 +450,8 @@ export class AuthService {
     const ageMax = dto.preferredAgeMax ?? profile.preferredAgeMax;
 
     if (dto.preferredAgeMin !== undefined || dto.preferredAgeMax !== undefined) {
-      if (!Number.isInteger(ageMin) || ageMin < 18 || ageMin > 99) {
-        throw new Error('Độ tuổi tối thiểu phải từ 18 trở lên.');
+      if (!Number.isInteger(ageMin) || ageMin < 13 || ageMin > 99) {
+        throw new Error('Độ tuổi tối thiểu phải từ 13 trở lên.');
       }
       if (!Number.isInteger(ageMax) || ageMax < ageMin || ageMax > 99) {
         throw new Error('Độ tuổi tối đa phải lớn hơn hoặc bằng độ tuổi tối thiểu.');

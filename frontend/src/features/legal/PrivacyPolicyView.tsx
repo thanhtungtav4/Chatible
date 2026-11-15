@@ -69,14 +69,15 @@ export function PrivacyPolicyView({ onBack }: LegalPageProps) {
           <section className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
             <div className="flex items-center gap-3 text-amber-400 font-bold text-lg mb-4">
               <Shield className="w-5 h-5 text-amber-400 shrink-0" />
-              <h2>2. Quy định Độ tuổi 18+ Bắt buộc</h2>
+              <h2>2. Quy định Độ tuổi (Từ đủ 13 tuổi trở lên)</h2>
             </div>
             <p className="mb-3">
-              Chatible là nền tảng dành riêng cho người trưởng thành (<strong>từ đủ 18 tuổi trở lên</strong>). Chúng tôi áp dụng quy tắc kiểm tra ngày sinh khi đăng ký:
+              Chatible phục vụ người dùng <strong>từ đủ 13 tuổi trở lên</strong>. Chúng tôi áp dụng quy tắc kiểm tra ngày sinh khi đăng ký:
             </p>
             <ul className="list-disc pl-6 space-y-2 text-slate-300">
-              <li>Hệ thống từ chối đăng ký và tạo tài khoản đối với bất kỳ người dùng nào dưới 18 tuổi.</li>
-              <li>Chúng tôi tuyệt đối không thu thập hoặc lưu trữ thông tin của trẻ vị thành niên. Bất kỳ tài khoản nào bị phát hiện chưa đủ 18 tuổi sẽ bị chấm dứt hoạt động ngay lập tức.</li>
+              <li>Hệ thống từ chối đăng ký và tạo tài khoản đối với bất kỳ người dùng nào dưới 13 tuổi.</li>
+              <li>Chúng tôi tuyệt đối không thu thập hoặc lưu trữ thông tin của trẻ em dưới 13 tuổi. Bất kỳ tài khoản nào bị phát hiện chưa đủ 13 tuổi sẽ bị chấm dứt hoạt động ngay lập tức.</li>
+              <li>Các tính năng liên quan đến nội dung người lớn (18+) được giới hạn nghiêm ngặt và chỉ áp dụng cho người dùng đã đủ 18 tuổi có đồng thuận.</li>
             </ul>
           </section>
 
@@ -89,7 +90,7 @@ export function PrivacyPolicyView({ onBack }: LegalPageProps) {
             <div className="space-y-4">
               <div>
                 <h3 className="font-semibold text-white mb-1">a. Thông tin tài khoản:</h3>
-                <p>Email, mật khẩu đã được băm an toàn (Argon2id/Scrypt/Bcrypt), biệt danh hiển thị (nickname), giới tính và ngày sinh (để xác nhận đủ 18+ và thuật toán ghép đôi theo độ tuổi).</p>
+                <p>Email, mật khẩu đã được băm an toàn (Argon2id/Scrypt/Bcrypt), biệt danh hiển thị (nickname), giới tính và ngày sinh (để xác nhận độ tuổi hợp lệ từ đủ 13+ và thuật toán ghép đôi theo độ tuổi).</p>
               </div>
               <div>
                 <h3 className="font-semibold text-white mb-1">b. Đăng nhập bằng Google (Google OAuth):</h3>

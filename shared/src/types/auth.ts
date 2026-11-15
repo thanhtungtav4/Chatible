@@ -1,6 +1,6 @@
 /**
  * Auth & Profile Contract Types
- * Strictly enforces 18+ policy & isolates sensitive user identity.
+ * Strictly enforces 13+ policy & isolates sensitive user identity.
  */
 
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
@@ -11,7 +11,7 @@ export interface UserPublicProfile {
   id: string;
   nickname: string;
   gender: Gender;
-  age: number; // Publicly displayed age (must be >= 18)
+  age: number; // Publicly displayed age (must be >= 13)
 }
 
 export interface UserPrivateProfile extends UserPublicProfile {
@@ -35,7 +35,7 @@ export interface UserNotificationDto {
 export interface RegisterDto {
   email: string;
   password: string;
-  birthDate: string; // YYYY-MM-DD - Server computes age; rejects if < 18
+  birthDate: string; // YYYY-MM-DD - Server computes age; rejects if < 13
   gender: Gender;
   nickname: string;
   policyAccepted: boolean;

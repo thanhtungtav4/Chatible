@@ -55,7 +55,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
   const [preferredGender, setPreferredGender] = useState<TargetGender>(
     (profile.preferredGender as TargetGender) || 'ALL'
   );
-  const [preferredAgeMin, setPreferredAgeMin] = useState<number>(profile.preferredAgeMin ?? 18);
+  const [preferredAgeMin, setPreferredAgeMin] = useState<number>(profile.preferredAgeMin ?? 13);
   const [preferredAgeMax, setPreferredAgeMax] = useState<number>(profile.preferredAgeMax ?? 30);
   const [mediaConsentDefault, setMediaConsentDefault] = useState<boolean>(
     profile.mediaConsentDefault ?? false
@@ -512,7 +512,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
             <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
               <ShieldCheck size={14} className="text-emerald-600" />
               <span title="Dựa trên ngày sinh tự khai báo, chưa xác thực bằng CCCD/Hộ chiếu">
-                Tự khai 18+ (Dựa trên ngày sinh)
+                {profile.age >= 18 ? 'Tự khai 18+ (Dựa trên ngày sinh)' : 'Đủ điều kiện tham gia (≥ 13 tuổi)'}
               </span>
             </div>
           </div>
@@ -625,12 +625,12 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="ageMin" className="block text-xs font-semibold text-slate-700">
-                Tuổi tối thiểu (≥ 18)
+                Tuổi tối thiểu (≥ 13)
               </label>
               <input
                 id="ageMin"
                 type="number"
-                min={18}
+                min={13}
                 max={99}
                 value={preferredAgeMin}
                 onChange={(e) => setPreferredAgeMin(Number(e.target.value))}
@@ -644,7 +644,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
               <input
                 id="ageMax"
                 type="number"
-                min={18}
+                min={13}
                 max={99}
                 value={preferredAgeMax}
                 onChange={(e) => setPreferredAgeMax(Number(e.target.value))}
