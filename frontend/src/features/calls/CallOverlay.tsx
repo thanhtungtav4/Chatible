@@ -309,45 +309,67 @@ export function CallOverlay() {
           </div>
 
           {/* Bottom Controls Bar */}
-          <div className="flex items-center justify-center gap-5 border-t border-slate-800/80 bg-slate-900/90 px-4 py-4 backdrop-blur-xl sm:gap-7">
+          <div
+            className="flex items-center justify-center gap-6 border-t border-slate-800/80 bg-slate-900/95 px-6 pt-4 pb-8 sm:gap-9 sm:pb-8 backdrop-blur-xl"
+            style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 2rem))' }}
+          >
             {/* Toggle Mic */}
-            <button
-              type="button"
-              onClick={toggleMic}
-              className={`flex h-13 w-13 items-center justify-center rounded-full text-white shadow-lg transition active:scale-95 ${
-                isMicMuted ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-800 hover:bg-slate-700'
-              }`}
-              title={isMicMuted ? 'Bật Micro' : 'Tắt Micro'}
-              aria-label={isMicMuted ? 'Bật Micro' : 'Tắt Micro'}
-            >
-              {isMicMuted ? <MicOff size={22} /> : <Mic size={22} />}
-            </button>
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                type="button"
+                onClick={toggleMic}
+                className={`flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-full text-white shadow-xl transition active:scale-95 ${
+                  isMicMuted
+                    ? 'bg-rose-500/20 text-rose-400 border-2 border-rose-500/50 hover:bg-rose-500/30'
+                    : 'bg-slate-800 border border-slate-700 text-white hover:bg-slate-700'
+                }`}
+                title={isMicMuted ? 'Bật Micro' : 'Tắt Micro'}
+                aria-label={isMicMuted ? 'Bật Micro' : 'Tắt Micro'}
+              >
+                {isMicMuted ? <MicOff size={24} /> : <Mic size={24} />}
+              </button>
+              <span className="text-[11px] font-medium text-slate-400 select-none">
+                {isMicMuted ? 'Bật Mic' : 'Tắt Mic'}
+              </span>
+            </div>
 
             {/* Toggle Camera (If video call) */}
             {callType === 'video' && (
-              <button
-                type="button"
-                onClick={toggleCamera}
-                className={`flex h-13 w-13 items-center justify-center rounded-full text-white shadow-lg transition active:scale-95 ${
-                  isCameraOff ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-800 hover:bg-slate-700'
-                }`}
-                title={isCameraOff ? 'Bật Camera' : 'Tắt Camera'}
-                aria-label={isCameraOff ? 'Bật Camera' : 'Tắt Camera'}
-              >
-                {isCameraOff ? <VideoOff size={22} /> : <Video size={22} />}
-              </button>
+              <div className="flex flex-col items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleCamera}
+                  className={`flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-full text-white shadow-xl transition active:scale-95 ${
+                    isCameraOff
+                      ? 'bg-rose-500/20 text-rose-400 border-2 border-rose-500/50 hover:bg-rose-500/30'
+                      : 'bg-slate-800 border border-slate-700 text-white hover:bg-slate-700'
+                  }`}
+                  title={isCameraOff ? 'Bật Camera' : 'Tắt Camera'}
+                  aria-label={isCameraOff ? 'Bật Camera' : 'Tắt Camera'}
+                >
+                  {isCameraOff ? <VideoOff size={24} /> : <Video size={24} />}
+                </button>
+                <span className="text-[11px] font-medium text-slate-400 select-none">
+                  {isCameraOff ? 'Bật Cam' : 'Tắt Cam'}
+                </span>
+              </div>
             )}
 
             {/* End Call */}
-            <button
-              type="button"
-              onClick={endCall}
-              className="flex h-13 w-13 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg shadow-rose-600/30 transition hover:bg-rose-700 hover:scale-105 active:scale-95"
-              title="Kết thúc cuộc gọi"
-              aria-label="Kết thúc cuộc gọi"
-            >
-              <PhoneOff size={24} />
-            </button>
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                type="button"
+                onClick={endCall}
+                className="flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white shadow-xl shadow-rose-600/40 transition hover:bg-rose-700 hover:scale-105 active:scale-95"
+                title="Kết thúc cuộc gọi"
+                aria-label="Kết thúc cuộc gọi"
+              >
+                <PhoneOff size={26} />
+              </button>
+              <span className="text-[11px] font-medium text-rose-400 select-none">
+                Kết thúc
+              </span>
+            </div>
           </div>
         </div>
       )}
