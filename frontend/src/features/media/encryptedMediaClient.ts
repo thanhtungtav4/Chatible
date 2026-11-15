@@ -1,4 +1,4 @@
-import { apiFetch } from '../../api.js';
+import { apiFetch, getCsrfToken } from '../../api.js';
 
 export type ClientMediaType = 'IMAGE' | 'AUDIO' | 'VIDEO';
 
@@ -93,8 +93,13 @@ export async function uploadAndFinalizeEncryptedMedia(
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', uploadUrl);
+    xhr.withCredentials = true;
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.setRequestHeader('x-amz-meta-media-id', mediaId);
+    const csrf = getCsrfToken();
+    if (csrf) {
+      xhr.setRequestHeader('X-CSRF-Token', csrf);
+    }
     if (input.onProgress) {
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && event.total > 0) {

@@ -282,6 +282,7 @@ export function registerCsrfOriginProtection(app: FastifyInstance): void {
 
     const cookies = getRequestCookies(req);
     const urlPath = req.url.split('?', 1)[0] ?? req.url;
+    if (urlPath.startsWith('/api/v1/media/upload-local')) return;
     const isAdminRoute = urlPath.startsWith('/api/v1/admin');
     const hasScopedSession = isAdminRoute
       ? Boolean(cookies[ADMIN_COOKIE_NAME])
