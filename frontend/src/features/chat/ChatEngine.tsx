@@ -12,6 +12,7 @@ import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionM
 import { useSmartAutoScroll } from './useSmartAutoScroll.js';
 import { triggerPushNotification, requestNotificationPermission } from '../notifications/pushNotification.js';
 import { triggerHaptic } from '../mobile/haptic.js';
+import { playMatchFoundSound, playMessageReceivedSound, playMessageSentSound } from '../audio/soundEffects.js';
 
 type MediaMessage = SessionMediaMeta;
 
@@ -121,6 +122,11 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const messagesRef = useRef<ChatMessage[]>(messages);
   messagesRef.current = messages;
 
+  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingEmittedRef = useRef(false);
+  const stopTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const emitSocketMediaMessage = useCallback(async ({ media, isAdult }: { media: UploadedSessionMedia; isAdult: boolean }) => {
     const socket = socketRef.current;
     if (!socket?.connected) throw new Error('Chưa kết nối máy chủ.');
@@ -156,6 +162,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
             media,
             time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           }]);
+          playMessageSentSound();
           resolve();
         }
       );
@@ -331,11 +338,13 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       shouldResumeRef.current = false;
       setSessionId(result.sessionId);
       setPartner(result.partner);
+      setIsPartnerTyping(false);
       if (typeof result.isFriend === 'boolean') {
         setIsAlreadyFriend(result.isFriend);
       }
       setChatState('CHATTING');
       triggerHaptic('success');
+      playMatchFoundSound();
 
       void triggerPushNotification({
         type: 'MATCH',
@@ -349,7 +358,9 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
       if (!sessionIdRef.current) setChatState('IDLE');
     });
     socket.on(SocketEvents.MESSAGE_RECEIVE, (message: { id: string; content: string; type?: string; isAdultContent?: boolean }) => {
+      setIsPartnerTyping(false);
       triggerHaptic('light');
+      playMessageReceivedSound();
       const mediaType = message.type === 'IMAGE' || message.type === 'AUDIO' || message.type === 'VIDEO'
         ? message.type
         : null;
@@ -376,6 +387,17 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
         content: previewText,
         tag: `chat-${sessionIdRef.current || 'active'}`,
       });
+    });
+    socket.on(SocketEvents.TYPING_START, () => {
+      setIsPartnerTyping(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsPartnerTyping(false);
+      }, 4000);
+    });
+    socket.on(SocketEvents.TYPING_STOP, () => {
+      setIsPartnerTyping(false);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     });
     socket.on(SocketEvents.MEDIA_CONSENT_UPDATE, (payload: { sessionId?: string; enabled?: boolean }) => {
       if (!payload?.sessionId || payload.sessionId === sessionIdRef.current) {
@@ -416,6 +438,8 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     });
 
     return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
       socket.disconnect();
       socketRef.current = null;
     };
@@ -507,6 +531,10 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     setMessages([]);
     setIsFriendRequested(false);
     setIsAlreadyFriend(false);
+    setIsPartnerTyping(false);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    isTypingEmittedRef.current = false;
     sessionMedia.clearAllMediaPreviews();
     setChatState('IDLE');
   }, [chatState, currentUser.id, sessionMedia]);
@@ -522,11 +550,40 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     }
   }, [resetTrigger]);
 
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const val = event.target.value;
+    setInputMessage(val);
+    if (chatState !== 'CHATTING' || !socketRef.current?.connected) return;
+    if (val.trim()) {
+      if (!isTypingEmittedRef.current) {
+        isTypingEmittedRef.current = true;
+        socketRef.current.emit(SocketEvents.TYPING_START);
+      }
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+      stopTypingTimerRef.current = setTimeout(() => {
+        isTypingEmittedRef.current = false;
+        socketRef.current?.emit(SocketEvents.TYPING_STOP);
+      }, 2500);
+    } else {
+      if (isTypingEmittedRef.current) {
+        isTypingEmittedRef.current = false;
+        socketRef.current.emit(SocketEvents.TYPING_STOP);
+      }
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    }
+  };
+
   const handleSendMessage = (event: React.FormEvent) => {
     event.preventDefault();
     const socket = socketRef.current;
     const text = inputMessage.trim();
     if (!text || (chatState !== 'CHATTING' && chatState !== 'RECONNECTING') || !socket?.connected) return;
+
+    if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    if (isTypingEmittedRef.current) {
+      isTypingEmittedRef.current = false;
+      socket.emit(SocketEvents.TYPING_STOP);
+    }
 
     setActionError(null);
     const clientMessageId = crypto.randomUUID();
@@ -542,6 +599,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
         time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       }]);
       setInputMessage('');
+      playMessageSentSound();
     });
   };
 
@@ -1017,6 +1075,16 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                   <span className="mt-0.5 px-1 text-[9.5px] font-medium text-slate-400">{message.time}</span>
                 </div>
               ))}
+              {isPartnerTyping && (
+                <div className="flex items-center gap-1.5 self-start py-1 animate-in fade-in slide-in-from-bottom-1 duration-200" aria-live="polite">
+                  <div className="flex items-center gap-1 rounded-2xl rounded-bl-xs border border-slate-200/80 bg-slate-100 px-3 py-2 text-slate-500 shadow-xs">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 italic">đối phương đang soạn tin...</span>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -1142,7 +1210,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                   type="text"
                   placeholder={chatState === 'RECONNECTING' ? 'Đối phương tạm rời đi, bạn vẫn có thể để lại tin nhắn...' : 'Nhập tin nhắn...'}
                   value={inputMessage}
-                  onChange={(event) => setInputMessage(event.target.value)}
+                  onChange={handleInputChange}
                   onFocus={() => {
                     setTimeout(() => {
                       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

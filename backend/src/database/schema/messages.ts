@@ -27,5 +27,7 @@ export const messages = pgTable(
   },
   (table) => [
     index('idx_messages_session_accepted_id').on(table.sessionId, table.acceptedAt, table.id),
+    index('idx_messages_expires_at').on(table.expiresAt),
+    index('idx_messages_client_idempotency').on(table.sessionId, table.senderId, table.clientMessageId),
   ]
 );

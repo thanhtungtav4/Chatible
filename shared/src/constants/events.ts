@@ -22,6 +22,10 @@ export const SocketEvents = {
   MESSAGE_READ: 'message:read',
   MESSAGE_REVOKE: 'message:revoke',
 
+  // Typing indicators
+  TYPING_START: 'typing:start',
+  TYPING_STOP: 'typing:stop',
+
   // Reconnection 30s
   CONNECTION_LOST: 'connection:lost',
   CONNECTION_RESTORED: 'connection:restored',

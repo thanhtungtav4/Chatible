@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users.js';
 
@@ -19,14 +19,21 @@ export const friendships = pgTable(
   ]
 );
 
-export const friendRequests = pgTable('friend_requests', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  fromUserId: uuid('from_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  toUserId: uuid('to_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  status: varchar('status', { length: 20 }).default('PENDING').notNull(), // PENDING, ACCEPTED, DECLINED, CANCELLED
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const friendRequests = pgTable(
+  'friend_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    fromUserId: uuid('from_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    toUserId: uuid('to_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    status: varchar('status', { length: 20 }).default('PENDING').notNull(), // PENDING, ACCEPTED, DECLINED, CANCELLED
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_friend_requests_to_status').on(table.toUserId, table.status),
+    index('idx_friend_requests_from_status').on(table.fromUserId, table.status),
+  ]
+);
 
 export const blockedUsers = pgTable(
   'blocked_users',

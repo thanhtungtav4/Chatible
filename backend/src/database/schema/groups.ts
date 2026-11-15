@@ -42,5 +42,8 @@ export const communityMessages = pgTable(
     acceptedAt: timestamp('accepted_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
-  (table) => [index('idx_community_messages_room').on(table.roomId, table.acceptedAt)]
+  (table) => [
+    index('idx_community_messages_room').on(table.roomId, table.acceptedAt),
+    index('idx_community_messages_expires_at').on(table.expiresAt),
+  ]
 );

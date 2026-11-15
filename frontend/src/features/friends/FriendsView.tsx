@@ -27,6 +27,7 @@ import { useSessionMedia, type UploadedSessionMedia } from '../media/useSessionM
 import { useSmartAutoScroll } from '../chat/useSmartAutoScroll.js';
 import { mergeFriendMessages, type OrderedFriendMessage } from './friendMessageOrder.js';
 import { triggerPushNotification } from '../notifications/pushNotification.js';
+import { playMessageReceivedSound, playMessageSentSound } from '../audio/soundEffects.js';
 
 type Friend = {
   id: string;
@@ -124,6 +125,11 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isFriendTyping, setIsFriendTyping] = useState(false);
+  const friendTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingEmittedRef = useRef(false);
+  const stopTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const socketRef = useRef<import('socket.io-client').Socket | null>(null);
   const selectedFriendIdRef = useRef<string | null>(null);
   const friendsRef = useRef<Friend[]>([]);
   const messagesRef = useRef<FriendMessage[]>([]);
@@ -156,6 +162,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       if (selectedFriendIdRef.current === friendId) {
         setMessages((current) => mergeFriendMessages(current, [message]));
       }
+      playMessageSentSound();
     },
     []
   );
@@ -220,10 +227,14 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       withCredentials: true,
       transports: ['websocket', 'polling'],
     });
+    socketRef.current = socket;
+
     socket.on(SocketEvents.FRIEND_MESSAGE_RECEIVE, (incoming: FriendMessage) => {
       const activeFriend = selectedFriendIdRef.current;
       if (activeFriend && (incoming.senderId === activeFriend || incoming.receiverId === activeFriend)) {
+        setIsFriendTyping(false);
         setMessages((current) => mergeFriendMessages(current, [incoming]));
+        playMessageReceivedSound();
       }
 
       if (incoming.senderId !== currentUserId) {
@@ -243,6 +254,24 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
         });
       }
     });
+
+    socket.on(SocketEvents.TYPING_START, (data: { userId?: string }) => {
+      if (data?.userId && data.userId === selectedFriendIdRef.current) {
+        setIsFriendTyping(true);
+        if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
+        friendTypingTimeoutRef.current = setTimeout(() => {
+          setIsFriendTyping(false);
+        }, 4000);
+      }
+    });
+
+    socket.on(SocketEvents.TYPING_STOP, (data: { userId?: string }) => {
+      if (data?.userId && data.userId === selectedFriendIdRef.current) {
+        setIsFriendTyping(false);
+        if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
+      }
+    });
+
     socket.on(SocketEvents.MEDIA_REVOKED, (payload: { mediaId?: string }) => {
       if (!payload?.mediaId) return;
       mediaHandlersRef.current.markMediaRevoked(
@@ -250,12 +279,20 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
         messagesRef.current.map((msg) => ({ messageId: msg.id, mediaId: parseFriendMedia(msg)?.mediaId }))
       );
     });
+
     return () => {
+      if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
       socket.disconnect();
+      socketRef.current = null;
     };
   }, []);
 
   useEffect(() => {
+    setIsFriendTyping(false);
+    if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
+    if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    isTypingEmittedRef.current = false;
     if (!selectedFriendId) {
       setMessages([]);
       setActiveSessionId(null);
@@ -448,11 +485,42 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     }
   };
 
+  const handleDraftChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const val = event.target.value;
+    setDraft(val);
+    const targetFriendId = selectedFriendIdRef.current;
+    if (!targetFriendId || !socketRef.current?.connected) return;
+    if (val.trim()) {
+      if (!isTypingEmittedRef.current) {
+        isTypingEmittedRef.current = true;
+        socketRef.current.emit(SocketEvents.TYPING_START, { targetUserId: targetFriendId });
+      }
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+      stopTypingTimerRef.current = setTimeout(() => {
+        isTypingEmittedRef.current = false;
+        socketRef.current?.emit(SocketEvents.TYPING_STOP, { targetUserId: targetFriendId });
+      }, 2500);
+    } else {
+      if (isTypingEmittedRef.current) {
+        isTypingEmittedRef.current = false;
+        socketRef.current.emit(SocketEvents.TYPING_STOP, { targetUserId: targetFriendId });
+      }
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    }
+  };
+
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const content = draft.trim();
     const targetFriendId = selectedFriendId;
     if (!content || !targetFriendId || isSending) return;
+
+    if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    if (isTypingEmittedRef.current) {
+      isTypingEmittedRef.current = false;
+      socketRef.current?.emit(SocketEvents.TYPING_STOP, { targetUserId: targetFriendId });
+    }
+
     setIsSending(true);
     setMessageError(null);
     try {
@@ -466,6 +534,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
         setMessages((current) => mergeFriendMessages(current, [message]));
       }
       setDraft('');
+      playMessageSentSound();
     } catch (requestError) {
       setMessageError(requestError instanceof Error ? requestError.message : 'Không thể gửi tin nhắn.');
     } finally {
@@ -619,6 +688,16 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                 </div>
               );
             })}
+            {isFriendTyping && (
+              <div className="flex items-center gap-1.5 self-start py-1 animate-in fade-in slide-in-from-bottom-1 duration-200" aria-live="polite">
+                <div className="flex items-center gap-1 rounded-2xl rounded-bl-xs border border-slate-200/80 bg-slate-100 px-3 py-2 text-slate-500 shadow-xs">
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" />
+                </div>
+                <span className="text-[10px] text-slate-400 italic">đang soạn tin...</span>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -688,7 +767,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
               <input
                 id="friend-message"
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={handleDraftChange}
                 onFocus={() => {
                   setTimeout(() => {
                     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

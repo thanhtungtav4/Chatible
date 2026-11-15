@@ -20,6 +20,7 @@ import {
   Smartphone,
   Trash2,
   UserX,
+  Volume2,
 } from 'lucide-react';
 import { apiFetch } from '../../api.js';
 import {
@@ -29,6 +30,7 @@ import {
   triggerPushNotification,
   isNotificationSupported,
 } from '../notifications/pushNotification.js';
+import { isSoundEnabled, setSoundEnabled, playMatchFoundSound } from '../audio/soundEffects.js';
 import { usePwaInstall } from '../pwa/usePwaInstall.js';
 import { PwaInstallModal } from '../pwa/PwaInstallModal.js';
 
@@ -89,6 +91,7 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
   const [isSavingStealth, setIsSavingStealth] = useState(false);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission>(() => getNotificationPermission());
   const [testNotifFeedback, setTestNotifFeedback] = useState<string | null>(null);
+  const [soundActive, setSoundActive] = useState(() => isSoundEnabled());
   const pwa = usePwaInstall();
 
   // Change Password State
@@ -1101,6 +1104,39 @@ export function ProfileView({ profile, onProfileUpdate, onLogout }: ProfileViewP
           {testNotifFeedback && (
             <p className="text-xs font-medium text-emerald-600">{testNotifFeedback}</p>
           )}
+        </div>
+      </section>
+
+      {/* 8.5. Audio Sound Effects */}
+      <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Volume2 size={17} className="text-blue-600" />
+            <div>
+              <h2 className="text-xs font-bold text-slate-800">Âm thanh tin nhắn & Ghép đôi</h2>
+              <p className="text-[11px] text-slate-500">Hiệu ứng âm thanh khi có tin nhắn mới hoặc tìm thấy đối phương</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={soundActive}
+            onClick={() => {
+              const next = !soundActive;
+              setSoundActive(next);
+              setSoundEnabled(next);
+              if (next) playMatchFoundSound();
+            }}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              soundActive ? 'bg-blue-600' : 'bg-slate-200'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                soundActive ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
         </div>
       </section>
 

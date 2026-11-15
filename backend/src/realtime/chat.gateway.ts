@@ -737,7 +737,36 @@ export class ChatGateway {
         });
       });
 
-      // 10. Group / Channel subscription
+      // 10. Typing indicators for Active Session or Friend Chat
+      socket.on(SocketEvents.TYPING_START, async (data?: { targetUserId?: string }) => {
+        let recipientId = data?.targetUserId;
+        if (!recipientId) {
+          const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
+          if (session && session.state === 'CHATTING') {
+            recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
+          }
+        }
+        if (!recipientId || recipientId === authUser.userId) return;
+        this.io.to(this.userRoom(recipientId)).emit(SocketEvents.TYPING_START, {
+          userId: authUser.userId,
+        });
+      });
+
+      socket.on(SocketEvents.TYPING_STOP, async (data?: { targetUserId?: string }) => {
+        let recipientId = data?.targetUserId;
+        if (!recipientId) {
+          const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
+          if (session && session.state === 'CHATTING') {
+            recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
+          }
+        }
+        if (!recipientId || recipientId === authUser.userId) return;
+        this.io.to(this.userRoom(recipientId)).emit(SocketEvents.TYPING_STOP, {
+          userId: authUser.userId,
+        });
+      });
+
+      // 11. Group / Channel subscription
       socket.on(SocketEvents.GROUP_JOIN, async ({ roomId }: { roomId: string }, ack?: SocketAck) => {
         if (!roomId) return;
         if (this.groupAccessChecker && !(await this.groupAccessChecker(authUser.userId, roomId))) {
