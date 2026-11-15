@@ -856,7 +856,7 @@ export class AdminService {
         if (valueStr === SMTP_PASSWORD_MASK || !valueStr.trim()) {
           continue;
         }
-        const hash = PasswordUtil.hash(valueStr.trim());
+        const hash = await PasswordUtil.hash(valueStr.trim());
         preparedEntries.push({ key: 'admin.auth.password_hash', value: hash, category: 'SECURITY' });
         continue;
       }
@@ -1144,7 +1144,7 @@ export class AdminService {
       if (trimmedUser.toLowerCase() !== storedUsername.toLowerCase()) {
         return false;
       }
-      if (storedPasswordHash && PasswordUtil.verify(trimmedPass, storedPasswordHash)) {
+      if (storedPasswordHash && (await PasswordUtil.verify(trimmedPass, storedPasswordHash))) {
         return true;
       }
       if (config.adminPassword) {
@@ -1173,7 +1173,7 @@ export class AdminService {
         const candBuf = Buffer.from(candidate);
         if (passBuf.length === candBuf.length && timingSafeEqual(passBuf, candBuf)) return true;
       }
-      if (storedPasswordHash && PasswordUtil.verify(candidate, storedPasswordHash)) {
+      if (storedPasswordHash && (await PasswordUtil.verify(candidate, storedPasswordHash))) {
         return true;
       }
     }

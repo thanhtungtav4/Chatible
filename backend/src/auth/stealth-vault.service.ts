@@ -48,7 +48,7 @@ export class StealthVaultService {
 
     if (profile.stealthPinHash) {
       const currentPin = dto.currentPin?.trim();
-      if (!currentPin || !PasswordUtil.verify(currentPin, profile.stealthPinHash)) {
+      if (!currentPin || !(await PasswordUtil.verify(currentPin, profile.stealthPinHash))) {
         throw new Error('Mã PIN hiện tại không chính xác.');
       }
     }
@@ -57,7 +57,7 @@ export class StealthVaultService {
       .update(profiles)
       .set({
         stealthEnabled: true,
-        stealthPinHash: PasswordUtil.hash(pin),
+        stealthPinHash: await PasswordUtil.hash(pin),
         updatedAt: new Date(),
       })
       .where(eq(profiles.userId, userId));
@@ -74,7 +74,7 @@ export class StealthVaultService {
       throw new Error('Kho riêng tư chưa được thiết lập.');
     }
 
-    if (!pin || !/^\d{4}$/.test(pin) || !PasswordUtil.verify(pin, profile.stealthPinHash)) {
+    if (!pin || !/^\d{4}$/.test(pin) || !(await PasswordUtil.verify(pin, profile.stealthPinHash))) {
       throw new Error('Mã PIN không chính xác.');
     }
 

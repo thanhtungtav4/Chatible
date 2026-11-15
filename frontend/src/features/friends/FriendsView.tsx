@@ -12,11 +12,8 @@ import {
   ImagePlus,
   MessageCircle,
   Mic,
-  MicOff,
+  MoreVertical,
   Phone,
-  PhoneCall,
-  PhoneIncoming,
-  PhoneOff,
   RefreshCw,
   Search,
   Send,
@@ -125,12 +122,6 @@ function formatTime(value: string): string {
   return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatDuration(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
 export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<IncomingFriendRequest[]>([]);
@@ -162,7 +153,6 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [olderMessagesError, setOlderMessagesError] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
   const [acceptingRequestId, setAcceptingRequestId] = useState<string | null>(null);
   const [decliningRequestId, setDecliningRequestId] = useState<string | null>(null);
   const [isActionBusy, setIsActionBusy] = useState(false);
@@ -171,6 +161,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isFriendTyping, setIsFriendTyping] = useState(false);
   const [activeReactionMessageId, setActiveReactionMessageId] = useState<string | null>(null);
+  const [showFriendMenu, setShowFriendMenu] = useState(false);
 
   const { startCall, callState } = useCall();
   const friendTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -239,6 +230,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
           contentType: file.type || (mediaType === 'IMAGE' ? 'image/webp' : 'audio/webm'),
           mediaType,
         }),
+        sentAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 86400000).toISOString(),
         isPending: true,
         uploadProgress: 5,
@@ -304,6 +296,22 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   useEffect(() => {
     void loadFriends();
   }, [loadFriends]);
+
+  useEffect(() => {
+    setShowFriendMenu(false);
+  }, [selectedFriendId]);
+
+  useEffect(() => {
+    if (!showFriendMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('#friend-header-menu-container')) {
+        setShowFriendMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFriendMenu]);
 
   const handleToggleReaction = useCallback((messageId: string, emoji: string) => {
     const activeFriend = selectedFriendIdRef.current;
@@ -657,9 +665,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       senderId: currentUserId,
       receiverId: targetFriendId,
       content,
-      type: 'TEXT',
       messageType: 'TEXT',
-      createdAt: nowIso,
       sentAt: nowIso,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       reactions: {},
@@ -696,11 +702,11 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     return (
       <section className="flex h-full min-h-[31rem] flex-col" aria-labelledby="friend-chat-title">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 mr-2">
             <button
               type="button"
               onClick={() => setSelectedFriendId(null)}
-              className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+              className="rounded-full p-2 text-slate-500 hover:bg-slate-100 transition shrink-0"
               aria-label="Quay lại danh sách bạn bè"
             >
               <ArrowLeft size={18} />
@@ -709,9 +715,11 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
               {initials(selectedFriend.nickname)}
               <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white ${selectedFriend.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} />
             </div>
-            <div className="min-w-0">
-              <h1 id="friend-chat-title" className="truncate text-sm font-bold text-slate-900">{selectedFriend.nickname}</h1>
-              <p className="flex items-center gap-1 text-[11px] text-slate-500">
+            <div className="min-w-0 flex-1">
+              <h1 id="friend-chat-title" className="truncate text-sm font-bold text-slate-900 leading-tight">
+                {selectedFriend.nickname}
+              </h1>
+              <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">
                 <span>{selectedFriend.age} tuổi</span>
                 <span>•</span>
                 <span className={selectedFriend.isOnline ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
@@ -720,81 +728,129 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
               </p>
             </div>
           </div>
+
           <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={() => void sessionMedia.handleConsentToggle()}
-              disabled={sessionMedia.mediaBusy || !activeSessionId}
-              aria-pressed={sessionMedia.mediaConsent}
-              className={`relative rounded-lg p-2 transition ${
-                sessionMedia.mediaConsent ? 'bg-emerald-100 text-emerald-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
-              } disabled:opacity-50`}
-              title={sessionMedia.mediaConsent ? 'Đang bật nhận ảnh/video' : 'Bật/tắt quyền nhận media'}
-              aria-label="Quyền nhận media"
-            >
-              <ShieldCheck size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={sessionMedia.handleAdultConsentToggle}
-              disabled={sessionMedia.mediaBusy || !activeSessionId}
-              aria-pressed={sessionMedia.myAdultConsent}
-              className={`relative rounded-lg p-2 transition ${
-                sessionMedia.myAdultConsent ? 'bg-rose-100 text-rose-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
-              } disabled:opacity-50`}
-              title={sessionMedia.myAdultConsent ? 'Đang bật nhận nội dung 18+' : 'Bật/tắt nhận nội dung 18+'}
-              aria-label="Quyền nhận nội dung 18+"
-            >
-              <Flame size={17} />
-            </button>
             <button
               type="button"
               onClick={() => void startCall({ id: selectedFriend.userId, nickname: selectedFriend.nickname }, 'voice')}
               disabled={callState !== 'idle'}
-              className={`relative rounded-lg p-2 transition ${
+              className={`relative rounded-xl p-2 transition ${
                 callState !== 'idle'
                   ? 'bg-emerald-100 text-emerald-700 animate-pulse'
-                  : 'text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
+                  : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-600'
               } disabled:opacity-40`}
               title="Gọi thoại P2P (WebRTC)"
               aria-label="Gọi thoại"
             >
-              <Phone size={17} />
+              <Phone size={18} />
             </button>
             <button
               type="button"
               onClick={() => void startCall({ id: selectedFriend.userId, nickname: selectedFriend.nickname }, 'video')}
               disabled={callState !== 'idle'}
-              className={`relative rounded-lg p-2 transition ${
+              className={`relative rounded-xl p-2 transition ${
                 callState !== 'idle'
                   ? 'bg-blue-100 text-blue-700 animate-pulse'
-                  : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'
+                  : 'text-slate-600 hover:bg-blue-50 hover:text-blue-600'
               } disabled:opacity-40`}
               title="Gọi video P2P (WebRTC)"
               aria-label="Gọi video"
             >
-              <Video size={17} />
+              <Video size={18} />
             </button>
-            <button
-              type="button"
-              onClick={() => handlePromptUnfriend(selectedFriend.userId, selectedFriend.nickname)}
-              disabled={isActionBusy}
-              className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
-              title="Hủy kết bạn"
-              aria-label="Hủy kết bạn"
-            >
-              <UserX size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => handlePromptBlock(selectedFriend.userId, selectedFriend.nickname)}
-              disabled={isActionBusy}
-              className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-              title="Chặn tài khoản"
-              aria-label="Chặn tài khoản"
-            >
-              <Ban size={17} />
-            </button>
+
+            {/* Menu More Options */}
+            <div id="friend-header-menu-container" className="relative">
+              <button
+                type="button"
+                onClick={() => setShowFriendMenu((prev) => !prev)}
+                aria-expanded={showFriendMenu}
+                aria-haspopup="true"
+                className={`rounded-xl p-2 transition ${
+                  showFriendMenu ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                }`}
+                title="Tùy chọn khác"
+                aria-label="Tùy chọn khác"
+              >
+                <MoreVertical size={18} />
+              </button>
+
+              {showFriendMenu && (
+                <div className="absolute right-0 top-full mt-1.5 z-30 w-56 rounded-2xl border border-slate-100 bg-white p-1.5 shadow-xl ring-1 ring-slate-900/5 animate-in fade-in slide-in-from-top-1 text-xs">
+                  {/* Media Consent Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void sessionMedia.handleConsentToggle();
+                      setShowFriendMenu(false);
+                    }}
+                    disabled={sessionMedia.mediaBusy || !activeSessionId}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <ShieldCheck size={16} className={sessionMedia.mediaConsent ? 'text-emerald-600' : 'text-slate-400'} />
+                      <span className="font-medium">Nhận ảnh & video</span>
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                      sessionMedia.mediaConsent ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {sessionMedia.mediaConsent ? 'BẬT' : 'TẮT'}
+                    </span>
+                  </button>
+
+                  {/* 18+ Adult Consent Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sessionMedia.handleAdultConsentToggle();
+                      setShowFriendMenu(false);
+                    }}
+                    disabled={sessionMedia.mediaBusy || !activeSessionId}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Flame size={16} className={sessionMedia.myAdultConsent ? 'text-rose-600' : 'text-slate-400'} />
+                      <span className="font-medium">Nhận nội dung 18+</span>
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                      sessionMedia.myAdultConsent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {sessionMedia.myAdultConsent ? 'BẬT' : 'TẮT'}
+                    </span>
+                  </button>
+
+                  <div className="my-1 border-t border-slate-100" />
+
+                  {/* Unfriend */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFriendMenu(false);
+                      handlePromptUnfriend(selectedFriend.userId, selectedFriend.nickname);
+                    }}
+                    disabled={isActionBusy}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
+                  >
+                    <UserX size={16} className="text-slate-400" />
+                    <span>Hủy kết bạn</span>
+                  </button>
+
+                  {/* Block */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFriendMenu(false);
+                      handlePromptBlock(selectedFriend.userId, selectedFriend.nickname);
+                    }}
+                    disabled={isActionBusy}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left font-medium text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
+                  >
+                    <Ban size={16} className="text-rose-500" />
+                    <span>Chặn tài khoản</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

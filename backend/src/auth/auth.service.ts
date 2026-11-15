@@ -101,7 +101,7 @@ export class AuthService {
       throw new Error('Email này đã được sử dụng. Vui lòng đăng nhập.');
     }
 
-    const passwordHash = PasswordUtil.hash(dto.password);
+    const passwordHash = await PasswordUtil.hash(dto.password);
     const normalizedEmail = dto.email.toLowerCase().trim();
 
     // Insert user & profile
@@ -159,6 +159,13 @@ export class AuthService {
   }
 
   /**
+   * Constant dummy scrypt hash to eliminate timing side-channel user enumeration (SEC-01).
+   * Ensures identical scrypt execution latency when an email does not exist in the database.
+   */
+  private static readonly DUMMY_SCRYPT_HASH =
+    '00000000000000000000000000000000:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
+
+  /**
    * User login with email and password
    */
   async login(dto: LoginDto): Promise<AuthResponse> {
@@ -167,6 +174,8 @@ export class AuthService {
       where: eq(users.email, normalizedEmail),
     });
     if (!user || !user.passwordHash) {
+      // Execute dummy scrypt verification so response latency matches a registered account (SEC-01)
+      await PasswordUtil.verify(dto.password, AuthService.DUMMY_SCRYPT_HASH).catch(() => false);
       throw new Error('Email hoặc mật khẩu không chính xác.');
     }
 
@@ -174,7 +183,7 @@ export class AuthService {
       throw new Error('Tài khoản của bạn đã bị khóa hoặc đình chỉ do vi phạm chính sách cộng đồng.');
     }
 
-    const isValid = PasswordUtil.verify(dto.password, user.passwordHash);
+    const isValid = await PasswordUtil.verify(dto.password, user.passwordHash);
     if (!isValid) {
       throw new Error('Email hoặc mật khẩu không chính xác.');
     }

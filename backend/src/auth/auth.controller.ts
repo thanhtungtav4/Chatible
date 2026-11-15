@@ -18,6 +18,7 @@ import { authenticateRequest } from '../http/route-auth.js';
 
 export class AuthController {
   private readonly authLimiter = new DistributedRateLimiter(15, 60_000, 'rl:auth:main');
+  private readonly accountLoginLimiter = new DistributedRateLimiter(10, 5 * 60_000, 'rl:auth:account');
   private readonly resetLimiter = new DistributedRateLimiter(5, 60_000, 'rl:auth:reset');
   private readonly vaultLimiter = new DistributedRateLimiter(5, 60_000, 'rl:auth:vault');
   private readonly verifyLimiter = new DistributedRateLimiter(5, 15 * 60_000, 'rl:auth:verify');
@@ -26,6 +27,7 @@ export class AuthController {
 
   setRedis(redis: Redis): void {
     this.authLimiter.setRedis(redis);
+    this.accountLoginLimiter.setRedis(redis);
     this.resetLimiter.setRedis(redis);
     this.vaultLimiter.setRedis(redis);
     this.verifyLimiter.setRedis(redis);
@@ -69,8 +71,20 @@ export class AuthController {
       if (!(await this.authLimiter.check(`login:${clientIp}`))) {
         return reply.status(429).send({ error: 'Quá nhiều yêu cầu đăng nhập. Vui lòng thử lại sau một phút.', code: 'RATE_LIMITED' });
       }
+
+      const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+      if (email && !(await this.accountLoginLimiter.check(`login:account:${email}`))) {
+        return reply.status(429).send({
+          error: 'Tài khoản này đang có quá nhiều lượt thử đăng nhập. Vui lòng thử lại sau ít phút.',
+          code: 'ACCOUNT_RATE_LIMITED',
+        });
+      }
+
       try {
         const result = await this.authService.login(req.body);
+        if (email) {
+          await this.accountLoginLimiter.reset(`login:account:${email}`).catch(() => {});
+        }
         if (result.accessToken) {
           setAuthCookies(reply, result.accessToken, result.expiresIn);
         }

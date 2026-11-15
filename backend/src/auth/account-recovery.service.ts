@@ -218,7 +218,7 @@ export class AccountRecoveryService {
       throw new Error('Mã xác nhận không chính xác hoặc đã hết hạn. Vui lòng yêu cầu mã mới.');
     }
 
-    const newHash = PasswordUtil.hash(newPassword);
+    const newHash = await PasswordUtil.hash(newPassword);
 
     await db
       .update(users)
@@ -258,12 +258,12 @@ export class AccountRecoveryService {
       throw new Error('Tài khoản đăng nhập qua Google chưa thiết lập mật khẩu.');
     }
 
-    const isMatch = PasswordUtil.verify(currentPassword, user.passwordHash);
+    const isMatch = await PasswordUtil.verify(currentPassword, user.passwordHash);
     if (!isMatch) {
       throw new Error('Mật khẩu hiện tại không chính xác.');
     }
 
-    const newPasswordHash = PasswordUtil.hash(newPassword);
+    const newPasswordHash = await PasswordUtil.hash(newPassword);
     const now = new Date();
 
     await db

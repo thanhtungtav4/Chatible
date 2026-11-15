@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fastify from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import { AuthController } from './auth.controller.js';
@@ -51,22 +52,27 @@ describe('Phase 3: Auth 18+ Security & Policy Tests (T012, T014, T017)', () => {
     expect(() => AgeUtil.calculateAge('2008/01/01', referenceDate)).toThrow('YYYY-MM-DD');
   });
 
-  it('T014: Password hashing and secure verification', () => {
+  it('T014: Password hashing and secure verification', async () => {
     const password = 'StrongPassword123!';
-    const hash = PasswordUtil.hash(password);
+    const hash = await PasswordUtil.hash(password);
 
     // Verify properties
     expect(hash).toContain(':');
     expect(hash).not.toBe(password);
 
     // Correct password succeeds
-    expect(PasswordUtil.verify(password, hash)).toBe(true);
+    expect(await PasswordUtil.verify(password, hash)).toBe(true);
 
     // Wrong password fails
-    expect(PasswordUtil.verify('WrongPassword456!', hash)).toBe(false);
+    expect(await PasswordUtil.verify('WrongPassword456!', hash)).toBe(false);
 
     // Mismatched length does not throw TypeError and returns false safely
-    expect(PasswordUtil.verify(password, 'salt:1234')).toBe(false);
+    expect(await PasswordUtil.verify(password, 'salt:1234')).toBe(false);
+
+    // Synchronous helpers remain intact for utility scripts
+    const syncHash = PasswordUtil.hashSync(password);
+    expect(PasswordUtil.verifySync(password, syncHash)).toBe(true);
+    expect(PasswordUtil.verifySync('Wrong!', syncHash)).toBe(false);
   });
 
   it('T014: JWT token signing and verification', () => {
@@ -486,6 +492,50 @@ describe('Phase 3: Auth 18+ Security & Policy Tests (T012, T014, T017)', () => {
       if (userId) {
         await db.delete(users).where(eq(users.id, userId));
       }
+    }
+  });
+
+  it('SEC-01 & SEC-02: protects against user enumeration timing attacks and enforces account-level login rate limits', async () => {
+    const app = fastify({ logger: false });
+    await app.register(fastifyCookie);
+    registerCsrfOriginProtection(app);
+    const authService = new AuthService();
+    const controller = new AuthController(authService);
+    controller.registerRoutes(app);
+    await app.ready();
+
+    const nonExistentEmail = `nonexistent-${randomUUID()}@chatible.test`;
+
+    try {
+      // 1. Non-existent email rejects with generic credential error (SEC-01)
+      await expect(
+        authService.login({ email: nonExistentEmail, password: 'ArbitraryPassword123!' })
+      ).rejects.toThrow('Email hoặc mật khẩu không chính xác.');
+
+      // 2. Account-level rate limiter blocks repeated distributed attempts on a single account (SEC-02)
+      const targetAccount = `victim-${randomUUID()}@chatible.test`;
+      for (let i = 0; i < 10; i++) {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/login',
+          payload: { email: targetAccount, password: `WrongGuess${i}!` },
+          // Rotate IP simulation
+          remoteAddress: `198.51.100.${i + 1}`,
+        });
+        expect(res.statusCode).toBe(401);
+      }
+
+      // 11th attempt on the same account is blocked with ACCOUNT_RATE_LIMITED even from a new IP
+      const blockedRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { email: targetAccount, password: 'AnotherGuess999!' },
+        remoteAddress: '203.0.113.88',
+      });
+      expect(blockedRes.statusCode).toBe(429);
+      expect(blockedRes.json().code).toBe('ACCOUNT_RATE_LIMITED');
+    } finally {
+      await app.close();
     }
   });
 });

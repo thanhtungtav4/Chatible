@@ -171,7 +171,7 @@ export class GroupsService {
       if (passcode.length < 4 || passcode.length > 32) {
         throw new Error('Nhóm bảo mật cần mã mật khẩu từ 4 đến 32 ký tự.');
       }
-      passcodeHash = PasswordUtil.hash(passcode);
+      passcodeHash = await PasswordUtil.hash(passcode);
     }
 
     const [created] = await db
@@ -215,7 +215,7 @@ export class GroupsService {
         verifiedAt = new Date();
       } else {
         const cleanPasscode = passcode?.trim() || '';
-        if (!room.passcodeHash || !cleanPasscode || !PasswordUtil.verify(cleanPasscode, room.passcodeHash)) {
+        if (!room.passcodeHash || !cleanPasscode || !(await PasswordUtil.verify(cleanPasscode, room.passcodeHash))) {
           throw ApiError.forbidden('Mã mật khẩu vào nhóm bảo mật không chính xác.');
         }
         verifiedAt = new Date();
