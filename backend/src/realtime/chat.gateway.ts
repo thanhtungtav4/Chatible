@@ -768,7 +768,7 @@ export class ChatGateway {
 
       // 11. Message Emoji Reactions
       socket.on(SocketEvents.MESSAGE_REACTION, async (payload: { messageId: string; emoji: string; targetUserId?: string }) => {
-        if (!payload?.messageId || !payload?.emoji) return;
+        if (!payload?.messageId || !payload?.emoji || typeof payload.emoji !== 'string' || payload.emoji.length > 8) return;
         let recipientId = payload.targetUserId;
         if (!recipientId) {
           const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
@@ -818,6 +818,7 @@ export class ChatGateway {
 
       socket.on(SocketEvents.CALL_ANSWER, async (payload: { targetUserId: string; sdp: unknown }) => {
         if (!payload?.targetUserId || !payload?.sdp) return;
+        if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) return;
         this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_ANSWER, {
           responderId: authUser.userId,
           sdp: payload.sdp,
@@ -826,6 +827,7 @@ export class ChatGateway {
 
       socket.on(SocketEvents.CALL_ICE_CANDIDATE, async (payload: { targetUserId: string; candidate: unknown }) => {
         if (!payload?.targetUserId || !payload?.candidate) return;
+        if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) return;
         this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_ICE_CANDIDATE, {
           senderId: authUser.userId,
           candidate: payload.candidate,
@@ -834,6 +836,7 @@ export class ChatGateway {
 
       socket.on(SocketEvents.CALL_END, async (payload: { targetUserId: string }) => {
         if (!payload?.targetUserId) return;
+        if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) return;
         this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_END, {
           senderId: authUser.userId,
         });
@@ -841,6 +844,7 @@ export class ChatGateway {
 
       socket.on(SocketEvents.CALL_REJECT, async (payload: { targetUserId: string }) => {
         if (!payload?.targetUserId) return;
+        if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) return;
         this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_REJECT, {
           senderId: authUser.userId,
         });

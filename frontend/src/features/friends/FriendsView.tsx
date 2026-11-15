@@ -162,6 +162,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const incomingSdpRef = useRef<RTCSessionDescriptionInit | null>(null);
+  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
 
   const friendTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingEmittedRef = useRef(false);
@@ -274,6 +275,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       peerConnectionRef.current = null;
     }
     incomingSdpRef.current = null;
+    pendingIceCandidatesRef.current = [];
     setCallState('idle');
     setCallerInfo(null);
     setCallDuration(0);
@@ -394,6 +396,16 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       };
 
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      if (pendingIceCandidatesRef.current.length > 0) {
+        for (const candidate of pendingIceCandidatesRef.current) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch {
+            // ignore malformed candidate
+          }
+        }
+        pendingIceCandidatesRef.current = [];
+      }
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
@@ -530,6 +542,16 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       if (peerConnectionRef.current) {
         try {
           await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          if (pendingIceCandidatesRef.current.length > 0) {
+            for (const candidate of pendingIceCandidatesRef.current) {
+              try {
+                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch {
+                // ignore malformed candidate
+              }
+            }
+            pendingIceCandidatesRef.current = [];
+          }
           setCallState('active');
           if (callTimerRef.current) clearInterval(callTimerRef.current);
           callTimerRef.current = setInterval(() => {
@@ -543,11 +565,15 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     });
 
     socket.on(SocketEvents.CALL_ICE_CANDIDATE, async (data: { senderId: string; candidate: RTCIceCandidateInit }) => {
-      if (peerConnectionRef.current && data?.candidate) {
-        try {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (e) {
-          console.error('Error adding ice candidate:', e);
+      if (data?.candidate) {
+        if (peerConnectionRef.current?.remoteDescription) {
+          try {
+            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+          } catch (e) {
+            console.error('Error adding ice candidate:', e);
+          }
+        } else {
+          pendingIceCandidatesRef.current.push(data.candidate);
         }
       }
     });
