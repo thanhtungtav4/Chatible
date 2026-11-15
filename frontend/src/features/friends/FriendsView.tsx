@@ -25,6 +25,7 @@ import {
   UserRound,
   Users,
   UserX,
+  Video,
   X,
 } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '../../api.js';
@@ -39,10 +40,9 @@ import {
   playMessageReceivedSound,
   playMessageSentSound,
   playReactionPopSound,
-  startCallRingtone,
-  stopCallRingtone,
 } from '../audio/soundEffects.js';
 import { ReactionPickerPopup, ReactionBadges } from '../chat/MessageReactionPicker.js';
+import { useCall } from '../calls/CallContext.js';
 
 type Friend = {
   id: string;
@@ -172,25 +172,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [isFriendTyping, setIsFriendTyping] = useState(false);
   const [activeReactionMessageId, setActiveReactionMessageId] = useState<string | null>(null);
 
-  // WebRTC P2P Voice Call States
-  const [callState, setCallState] = useState<'idle' | 'outgoing' | 'incoming' | 'active'>('idle');
-  const [callerInfo, setCallerInfo] = useState<{ id: string; nickname: string } | null>(null);
-  const [callDuration, setCallDuration] = useState(0);
-  const [isMicMuted, setIsMicMuted] = useState(false);
-  const [callError, setCallError] = useState<string | null>(null);
-
-  const callStateRef = useRef(callState);
-  callStateRef.current = callState;
-  const callerInfoRef = useRef(callerInfo);
-  callerInfoRef.current = callerInfo;
-
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const incomingSdpRef = useRef<RTCSessionDescriptionInit | null>(null);
-  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
-
+  const { startCall, callState } = useCall();
   const friendTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingEmittedRef = useRef(false);
   const stopTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -323,184 +305,6 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     void loadFriends();
   }, [loadFriends]);
 
-  const cleanupCall = useCallback(() => {
-    stopCallRingtone();
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current);
-      callTimerRef.current = null;
-    }
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-    }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = null;
-    }
-    incomingSdpRef.current = null;
-    pendingIceCandidatesRef.current = [];
-    setCallState('idle');
-    setCallerInfo(null);
-    setCallDuration(0);
-    setIsMicMuted(false);
-  }, []);
-
-  const handleEndCall = useCallback(() => {
-    const targetUserId = callerInfo?.id || selectedFriendIdRef.current;
-    if (targetUserId) {
-      socketRef.current?.emit(SocketEvents.CALL_END, { targetUserId });
-    }
-    cleanupCall();
-  }, [callerInfo, cleanupCall]);
-
-  const handleRejectCall = useCallback(() => {
-    const targetUserId = callerInfo?.id;
-    if (targetUserId) {
-      socketRef.current?.emit(SocketEvents.CALL_REJECT, { targetUserId });
-    }
-    cleanupCall();
-  }, [callerInfo, cleanupCall]);
-
-  const handleStartVoiceCall = useCallback(async (targetFriend: Friend) => {
-    if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === 'undefined') {
-      setCallError('Trình duyệt không hỗ trợ cuộc gọi WebRTC.');
-      setTimeout(() => setCallError(null), 3500);
-      return;
-    }
-    cleanupCall();
-    setCallState('outgoing');
-    setCallerInfo({ id: targetFriend.userId, nickname: targetFriend.nickname });
-    startCallRingtone();
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      localStreamRef.current = stream;
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      });
-      peerConnectionRef.current = pc;
-
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socketRef.current?.emit(SocketEvents.CALL_ICE_CANDIDATE, {
-            targetUserId: targetFriend.userId,
-            candidate: event.candidate,
-          });
-        }
-      };
-
-      pc.ontrack = (event) => {
-        if (remoteAudioRef.current && event.streams[0]) {
-          remoteAudioRef.current.srcObject = event.streams[0];
-          remoteAudioRef.current.play().catch(() => undefined);
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          cleanupCall();
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socketRef.current?.emit(SocketEvents.CALL_OFFER, {
-        targetUserId: targetFriend.userId,
-        sdp: offer,
-      });
-    } catch (err) {
-      cleanupCall();
-      setCallError(err instanceof Error ? err.message : 'Không thể truy cập microphone.');
-      setTimeout(() => setCallError(null), 3500);
-    }
-  }, [cleanupCall]);
-
-  const handleAcceptCall = useCallback(async () => {
-    const sdp = incomingSdpRef.current;
-    const caller = callerInfo;
-    if (!sdp || !caller) return;
-    stopCallRingtone();
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      localStreamRef.current = stream;
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      });
-      peerConnectionRef.current = pc;
-
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socketRef.current?.emit(SocketEvents.CALL_ICE_CANDIDATE, {
-            targetUserId: caller.id,
-            candidate: event.candidate,
-          });
-        }
-      };
-
-      pc.ontrack = (event) => {
-        if (remoteAudioRef.current && event.streams[0]) {
-          remoteAudioRef.current.srcObject = event.streams[0];
-          remoteAudioRef.current.play().catch(() => undefined);
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          cleanupCall();
-        }
-      };
-
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      if (pendingIceCandidatesRef.current.length > 0) {
-        for (const candidate of pendingIceCandidatesRef.current) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch {
-            // ignore malformed candidate
-          }
-        }
-        pendingIceCandidatesRef.current = [];
-      }
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socketRef.current?.emit(SocketEvents.CALL_ANSWER, {
-        targetUserId: caller.id,
-        sdp: answer,
-      });
-
-      setCallState('active');
-      callTimerRef.current = setInterval(() => {
-        setCallDuration((prev) => prev + 1);
-      }, 1000);
-    } catch (err) {
-      cleanupCall();
-      setCallError(err instanceof Error ? err.message : 'Lỗi kết nối cuộc gọi.');
-      setTimeout(() => setCallError(null), 3500);
-    }
-  }, [callerInfo, cleanupCall]);
-
-  const handleToggleMic = useCallback(() => {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsMicMuted(!audioTrack.enabled);
-      }
-    }
-  }, []);
-
   const handleToggleReaction = useCallback((messageId: string, emoji: string) => {
     const activeFriend = selectedFriendIdRef.current;
     if (!activeFriend || !socketRef.current?.connected) return;
@@ -596,73 +400,6 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       setMessages((prev) => prev.map((msg) => (msg.senderId === currentUserId ? { ...msg, isRead: true } : msg)));
     });
 
-    socket.on(SocketEvents.CALL_OFFER, (data: { callerId: string; callerNickname: string; sdp: RTCSessionDescriptionInit }) => {
-      if (callStateRef.current !== 'idle') {
-        socket.emit(SocketEvents.CALL_REJECT, {
-          targetUserId: data.callerId,
-          reason: 'Người dùng đang trong cuộc gọi khác.',
-        });
-        return;
-      }
-      incomingSdpRef.current = data.sdp;
-      setCallerInfo({ id: data.callerId, nickname: data.callerNickname || 'Bạn bè' });
-      setCallState('incoming');
-      startCallRingtone();
-    });
-
-    socket.on(SocketEvents.CALL_ANSWER, async (data: { responderId: string; sdp: RTCSessionDescriptionInit }) => {
-      stopCallRingtone();
-      if (peerConnectionRef.current) {
-        try {
-          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
-          if (pendingIceCandidatesRef.current.length > 0) {
-            for (const candidate of pendingIceCandidatesRef.current) {
-              try {
-                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-              } catch {
-                // ignore malformed candidate
-              }
-            }
-            pendingIceCandidatesRef.current = [];
-          }
-          setCallState('active');
-          if (callTimerRef.current) clearInterval(callTimerRef.current);
-          callTimerRef.current = setInterval(() => {
-            setCallDuration((prev) => prev + 1);
-          }, 1000);
-        } catch (e) {
-          console.error('Call answer error:', e);
-          cleanupCall();
-        }
-      }
-    });
-
-    socket.on(SocketEvents.CALL_ICE_CANDIDATE, async (data: { senderId: string; candidate: RTCIceCandidateInit }) => {
-      if (data?.candidate) {
-        if (peerConnectionRef.current?.remoteDescription) {
-          try {
-            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-          } catch (e) {
-            console.error('Error adding ice candidate:', e);
-          }
-        } else {
-          pendingIceCandidatesRef.current.push(data.candidate);
-        }
-      }
-    });
-
-    socket.on(SocketEvents.CALL_END, () => {
-      cleanupCall();
-    });
-
-    socket.on(SocketEvents.CALL_REJECT, (data?: { reason?: string }) => {
-      if (data?.reason) {
-        setCallError(data.reason);
-        setTimeout(() => setCallError(null), 3500);
-      }
-      cleanupCall();
-    });
-
     socket.on(SocketEvents.MEDIA_REVOKED, (payload: { mediaId?: string }) => {
       if (!payload?.mediaId) return;
       mediaHandlersRef.current.markMediaRevoked(
@@ -672,17 +409,12 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     });
 
     return () => {
-      const activeCaller = callerInfoRef.current?.id || selectedFriendIdRef.current;
-      if (callStateRef.current !== 'idle' && activeCaller && socketRef.current?.connected) {
-        socketRef.current.emit(SocketEvents.CALL_END, { targetUserId: activeCaller });
-      }
-      cleanupCall();
       if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
       if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [cleanupCall, currentUserId]);
+  }, [currentUserId]);
 
   useEffect(() => {
     setIsFriendTyping(false);
@@ -1017,7 +749,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
             </button>
             <button
               type="button"
-              onClick={() => handleStartVoiceCall(selectedFriend)}
+              onClick={() => void startCall({ id: selectedFriend.userId, nickname: selectedFriend.nickname }, 'voice')}
               disabled={callState !== 'idle'}
               className={`relative rounded-lg p-2 transition ${
                 callState !== 'idle'
@@ -1028,6 +760,20 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
               aria-label="Gọi thoại"
             >
               <Phone size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => void startCall({ id: selectedFriend.userId, nickname: selectedFriend.nickname }, 'video')}
+              disabled={callState !== 'idle'}
+              className={`relative rounded-lg p-2 transition ${
+                callState !== 'idle'
+                  ? 'bg-blue-100 text-blue-700 animate-pulse'
+                  : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'
+              } disabled:opacity-40`}
+              title="Gọi video P2P (WebRTC)"
+              aria-label="Gọi video"
+            >
+              <Video size={17} />
             </button>
             <button
               type="button"
@@ -1051,102 +797,6 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
             </button>
           </div>
         </div>
-
-        {/* Hidden Remote Audio Element for WebRTC */}
-        <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
-
-        {callError && (
-          <div className="mt-2 rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700 font-medium animate-in fade-in">
-            {callError}
-          </div>
-        )}
-
-        {/* WebRTC Voice Call Status Banners */}
-        {callState === 'incoming' && (
-          <div className="mt-2 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-3 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-emerald-500 text-white flex items-center justify-center animate-pulse shadow-md">
-                <PhoneIncoming size={18} />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">Cuộc gọi thoại đến</h4>
-                <p className="text-[11px] text-emerald-800 font-medium">{callerInfo?.nickname || 'Bạn bè'}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleRejectCall}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white shadow-sm hover:bg-rose-600 active:scale-95"
-                title="Từ chối"
-              >
-                <PhoneOff size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={handleAcceptCall}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 active:scale-95"
-                title="Trả lời"
-              >
-                <Phone size={16} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {callState === 'outgoing' && (
-          <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-3 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center animate-pulse shadow-md">
-                <PhoneCall size={18} />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">Đang gọi thoại...</h4>
-                <p className="text-[11px] text-slate-600 font-medium">{callerInfo?.nickname || selectedFriend.nickname}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleEndCall}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white shadow-sm hover:bg-rose-600 active:scale-95"
-              title="Hủy cuộc gọi"
-            >
-              <PhoneOff size={16} />
-            </button>
-          </div>
-        )}
-
-        {callState === 'active' && (
-          <div className="mt-2 rounded-2xl border border-emerald-400 bg-emerald-600 text-white p-2.5 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center gap-2.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-200 animate-ping" />
-              <div>
-                <span className="text-xs font-bold">Đang gọi • {formatDuration(callDuration)}</span>
-                <p className="text-[10px] text-emerald-100">{callerInfo?.nickname || selectedFriend.nickname}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleToggleMic}
-                className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                  isMicMuted ? 'bg-amber-400 text-slate-900' : 'bg-emerald-700/90 text-white hover:bg-emerald-700'
-                }`}
-                title={isMicMuted ? 'Bật micro' : 'Tắt micro'}
-              >
-                {isMicMuted ? <MicOff size={14} /> : <Mic size={14} />}
-              </button>
-              <button
-                type="button"
-                onClick={handleEndCall}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-500 text-white hover:bg-rose-600 active:scale-95 shadow-xs"
-                title="Kết thúc"
-              >
-                <PhoneOff size={14} />
-              </button>
-            </div>
-          </div>
-        )}
 
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div
@@ -1474,7 +1124,19 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
               <p className="py-4 text-center text-xs text-slate-400">Không tìm thấy bạn nào khớp với từ khóa.</p>
             ) : (
               filteredFriends.map((friend) => (
-                <button key={friend.userId} type="button" onClick={() => setSelectedFriendId(friend.userId)} className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md" role="listitem">
+                <div
+                  key={friend.userId}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedFriendId(friend.userId)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedFriendId(friend.userId);
+                    }
+                  }}
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md"
+                >
                   <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700">
                     {initials(friend.nickname)}
                     <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${friend.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} aria-label={friend.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'} />
@@ -1483,9 +1145,44 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                     <p className="truncate text-sm font-bold text-slate-900">{friend.nickname}</p>
                     <p className="mt-0.5 text-xs text-slate-500">{friend.age} tuổi · {friend.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}</p>
                   </div>
-                  <MessageCircle size={18} className="text-blue-500" aria-hidden="true" />
-                  <span className="sr-only">Mở cuộc trò chuyện</span>
-                </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void startCall({ id: friend.userId, nickname: friend.nickname }, 'voice');
+                      }}
+                      disabled={callState !== 'idle'}
+                      className="rounded-full p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition disabled:opacity-40"
+                      title={`Gọi thoại cho ${friend.nickname}`}
+                      aria-label={`Gọi thoại cho ${friend.nickname}`}
+                    >
+                      <Phone size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void startCall({ id: friend.userId, nickname: friend.nickname }, 'video');
+                      }}
+                      disabled={callState !== 'idle'}
+                      className="rounded-full p-2 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition disabled:opacity-40"
+                      title={`Gọi video cho ${friend.nickname}`}
+                      aria-label={`Gọi video cho ${friend.nickname}`}
+                    >
+                      <Video size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFriendId(friend.userId)}
+                      className="rounded-full p-2 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition"
+                      title={`Nhắn tin với ${friend.nickname}`}
+                      aria-label="Nhắn tin"
+                    >
+                      <MessageCircle size={16} />
+                    </button>
+                  </div>
+                </div>
               ))
             )}
           </div>

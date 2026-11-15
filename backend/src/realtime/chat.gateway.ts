@@ -839,8 +839,8 @@ export class ChatGateway {
         });
       });
 
-      // 13. WebRTC P2P Voice Calling (Friends)
-      socket.on(SocketEvents.CALL_OFFER, async (payload: { targetUserId: string; sdp: unknown }) => {
+      // 13. WebRTC P2P Calling (Friends - Voice & Video)
+      socket.on(SocketEvents.CALL_OFFER, async (payload: { targetUserId: string; sdp: unknown; callType?: 'voice' | 'video' }) => {
         if (!payload?.targetUserId || !payload?.sdp || payload.targetUserId === authUser.userId) return;
         if (!(await this.callLimiter.check(authUser.userId))) {
           socket.emit(SocketEvents.CALL_REJECT, {
@@ -850,7 +850,7 @@ export class ChatGateway {
           return;
         }
         if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) {
-          socket.emit(SocketEvents.CALL_REJECT, { targetUserId: payload.targetUserId, reason: 'Chỉ có thể gọi thoại khi đã là bạn bè.' });
+          socket.emit(SocketEvents.CALL_REJECT, { targetUserId: payload.targetUserId, reason: 'Chỉ có thể gọi điện khi đã là bạn bè.' });
           return;
         }
         this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_OFFER, {
@@ -858,6 +858,7 @@ export class ChatGateway {
           callerNickname: authUser.nickname,
           callerGender: authUser.gender,
           callerAge: authUser.age,
+          callType: payload.callType || 'voice',
           sdp: payload.sdp,
         });
       });

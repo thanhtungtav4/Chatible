@@ -9,6 +9,8 @@ import { usePwaInstall } from './features/pwa/usePwaInstall.js';
 import { PwaInstallModal } from './features/pwa/PwaInstallModal.js';
 import { triggerHaptic } from './features/mobile/haptic.js';
 import { StealthCamouflageScreen } from './features/security/StealthCamouflageScreen.js';
+import { CallProvider } from './features/calls/CallContext.js';
+import { CallOverlay } from './features/calls/CallOverlay.js';
 
 const FriendsView = lazy(() => import('./features/friends/FriendsView.js').then((m) => ({ default: m.FriendsView })));
 const GroupsView = lazy(() => import('./features/groups/GroupsView.js').then((m) => ({ default: m.GroupsView })));
@@ -235,7 +237,9 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#e2e8f0] p-0 md:p-6">
+    <CallProvider currentUserId={userProfile?.id}>
+      <CallOverlay />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#e2e8f0] p-0 md:p-6">
       <div className="relative flex h-[100dvh] w-full max-w-[420px] flex-col overflow-hidden bg-white shadow-2xl md:h-[860px] md:rounded-[48px] md:border-[10px] md:border-[#1e293b]">
         {/* Sleek punch-hole camera dot for desktop preview frame */}
         <div aria-hidden="true" className="pointer-events-none hidden md:block absolute left-1/2 top-3 z-50 h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-slate-900 ring-2 ring-slate-800/80 shadow-inner" />
@@ -664,5 +668,6 @@ export default function App() {
         </a>
       </footer>
     </div>
+    </CallProvider>
   );
 }

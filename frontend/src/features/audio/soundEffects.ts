@@ -196,3 +196,23 @@ export function stopCallRingtone(): void {
     ringInterval = null;
   }
 }
+
+/**
+ * Call disconnected / ended tone
+ */
+export function playCallEndedSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx || !isSoundEnabled()) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const now = ctx.currentTime;
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, now);
+  osc.frequency.exponentialRampToValueAtTime(220, now + 0.28);
+  gain.gain.setValueAtTime(0.12, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.28);
+}
