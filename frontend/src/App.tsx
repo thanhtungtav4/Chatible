@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AuthResponse, UserNotificationDto } from '@chatible/shared';
-import { Bell, CheckCheck, Clock3, Download, EyeOff, MessageSquare, MessagesSquare, ShieldAlert, Smartphone, User, UsersRound, X } from 'lucide-react';
+import { Bell, CheckCheck, Clock3, Download, EyeOff, MessageSquare, MessagesSquare, ShieldAlert, User, UsersRound, X } from 'lucide-react';
 import { apiFetch } from './api.js';
 import { AuthModal } from './features/auth/AuthModal.js';
 import { ChatEngine } from './features/chat/ChatEngine.js';
@@ -128,7 +128,7 @@ export default function App() {
               void triggerPushNotification({
                 type: 'SYSTEM',
                 title: item.title,
-                content: item.content,
+                content: item.body,
                 tag: `system-${item.id}`,
               });
             }

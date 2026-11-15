@@ -16,6 +16,8 @@ export const friendships = pgTable(
     uniqueIndex('idx_unique_friendship_pair').on(
       sql`LEAST(${table.user1Id}, ${table.user2Id}), GREATEST(${table.user1Id}, ${table.user2Id})`
     ),
+    index('idx_friendships_user1').on(table.user1Id),
+    index('idx_friendships_user2').on(table.user2Id),
   ]
 );
 

@@ -11,9 +11,52 @@ interface MediaAttachmentPreviewProps {
   viewState?: MediaViewState;
   revokedFallback?: boolean;
   busy: boolean;
+  localPreviewUrl?: string;
+  uploadProgress?: number;
   audioExtra?: ReactNode;
   onView: () => void;
   onRevoke: () => void;
+}
+
+function CircularProgress({ percent }: { percent: number }) {
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const safePercent = Math.min(100, Math.max(0, percent));
+  const strokeDashoffset = circumference - (safePercent / 100) * circumference;
+
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/45 backdrop-blur-[1px] rounded-lg">
+      <div className="relative flex items-center justify-center">
+        <svg className="w-12 h-12 -rotate-90 transform" viewBox="0 0 44 44">
+          <circle
+            cx="22"
+            cy="22"
+            r={radius}
+            className="text-white/25"
+            strokeWidth="3.5"
+            stroke="currentColor"
+            fill="transparent"
+          />
+          <circle
+            cx="22"
+            cy="22"
+            r={radius}
+            className="text-white transition-all duration-150 ease-out"
+            strokeWidth="3.5"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            stroke="currentColor"
+            fill="transparent"
+          />
+        </svg>
+        <span className="absolute text-[11px] font-bold text-white tracking-tighter">
+          {Math.round(safePercent)}%
+        </span>
+      </div>
+      <span className="mt-1 text-[9.5px] font-medium text-white/90">Đang tải lên…</span>
+    </div>
+  );
 }
 
 export function MediaAttachmentPreview({
@@ -24,12 +67,14 @@ export function MediaAttachmentPreview({
   viewState,
   revokedFallback,
   busy,
+  localPreviewUrl,
+  uploadProgress,
   audioExtra,
   onView,
   onRevoke,
 }: MediaAttachmentPreviewProps) {
   const isRevoked = Boolean(viewState?.revoked || revokedFallback);
-  const previewUrl = isRevoked ? undefined : viewState?.previewUrl;
+  const previewUrl = isRevoked ? undefined : (localPreviewUrl || viewState?.previewUrl);
 
   return (
     <div className="space-y-2 text-xs">
@@ -43,14 +88,17 @@ export function MediaAttachmentPreview({
       </div>
 
       {previewUrl && mediaType === 'IMAGE' && (
-        <div className="relative select-none">
+        <div className="relative select-none overflow-hidden rounded-lg">
           <img
             src={previewUrl}
             alt={viewState?.watermarkText || 'Media'}
             draggable={false}
             onContextMenu={(event) => event.preventDefault()}
-            className="max-h-56 select-none rounded-lg"
+            className="max-h-56 select-none rounded-lg object-cover"
           />
+          {uploadProgress !== undefined && uploadProgress < 100 && (
+            <CircularProgress percent={uploadProgress} />
+          )}
           {viewState?.watermarkedMode !== 'embedded' && viewState?.watermarkText && (
             <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-black/55 px-1 py-0.5 text-[9px] text-white">
               {viewState.watermarkText}

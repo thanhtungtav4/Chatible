@@ -30,7 +30,9 @@ export function isSoundEnabled(): boolean {
 export function setSoundEnabled(enabled: boolean): void {
   try {
     localStorage.setItem('chatible_sound_enabled', String(enabled));
-  } catch {}
+  } catch {
+    // ignore storage error
+  }
 }
 
 /**

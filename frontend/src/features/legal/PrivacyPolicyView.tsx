@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowLeft, CheckCircle, Database, EyeOff, Lock, Mail, Shield, Trash2, UserCheck } from 'lucide-react';
 
 interface LegalPageProps {

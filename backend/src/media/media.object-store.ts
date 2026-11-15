@@ -6,8 +6,6 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
-  HeadBucketCommand,
-  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -43,11 +41,13 @@ export class LocalObjectStore implements MediaObjectStore {
     this.baseUrl = options?.baseUrl || '/api/v1/media/upload-local';
     try {
       fs.mkdirSync(this.baseDir, { recursive: true });
-    } catch {}
+    } catch {
+      // ignore existing directory errors
+    }
   }
 
   private resolvePath(key: string): string {
-    const safeKey = key.replace(/(\.\.[\/\\])+/g, '').replace(/^[\\\/]+/, '');
+    const safeKey = key.replace(/(\.\.[/\\])+/g, '').replace(/^[\\/]+/, '');
     const fullPath = path.resolve(this.baseDir, safeKey);
     if (!fullPath.startsWith(this.baseDir)) {
       throw new MediaError(400, 'Đường dẫn tệp không hợp lệ.');
@@ -282,7 +282,9 @@ export class HybridObjectStore implements MediaObjectStore {
         try {
           const crypto = new EnvelopeCryptoService(createConfiguredKms().kms);
           secretKey = await decryptSettingSecret(secretKey, crypto);
-        } catch {}
+        } catch {
+          // ignore decrypt errors on fallback
+        }
       }
 
       const region = map.get('storage.s3.region') || config.objectStorage.region || 'auto';
@@ -341,7 +343,9 @@ export class HybridObjectStore implements MediaObjectStore {
       try {
         const s3Head = await this.s3Store.head(key);
         if (s3Head.exists) return s3Head;
-      } catch {}
+      } catch {
+        // ignore s3 head errors on fallback
+      }
     }
     return { exists: false };
   }

@@ -656,4 +656,78 @@ describe('Chat gateway session lifecycle', () => {
       await db.delete(users).where(eq(users.id, userId));
     }
   });
+
+  it('blocks unauthorized MESSAGE_REACTION and WebRTC calls to non-friends', async () => {
+    const userIds = [randomUUID(), randomUUID()];
+    const emails = userIds.map((id) => `gateway-sec-${id}@chatible.test`);
+    const httpServer = createServer();
+    const socketServer = new SocketIOServer(httpServer, { transports: ['websocket'] });
+    const redisNamespace = `chatible:test:gateway:sec:${randomUUID()}`;
+    const matchingEngine = new MatchingEngine(config.redisUrl, redisNamespace);
+    const sessionCoordinator = new RedisSessionCoordinator(config.redisUrl, redisNamespace, matchingEngine.instanceId);
+    let clientA: ClientSocket | undefined;
+    let clientB: ClientSocket | undefined;
+    let gateway: ChatGateway | undefined;
+
+    try {
+      await db.insert(users).values(userIds.map((id, index) => ({ id, email: emails[index]! })));
+      await db.insert(profiles).values(
+        userIds.map((userId, index) => ({
+          userId,
+          nickname: `SecUser ${index}`,
+          gender: 'MALE',
+          birthDate: '1995-01-01',
+          calculatedAge: 29,
+        }))
+      );
+
+      await Promise.all([matchingEngine.connect(), sessionCoordinator.connect()]);
+      const safetyService = new SafetyService(cryptoService, config.superAdminId);
+      gateway = new ChatGateway(
+        socketServer,
+        matchingEngine,
+        sessionCoordinator,
+        cryptoService,
+        new FriendsService(cryptoService),
+        safetyService,
+        new MediaService()
+      );
+      await gateway.registerHandlers();
+
+      await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+      const address = httpServer.address();
+      if (!address || typeof address === 'string') throw new Error('No port');
+      const url = `http://127.0.0.1:${address.port}`;
+
+      clientA = await connectUser(url, JwtUtil.sign({ sub: userIds[0]!, email: emails[0]! }, config.jwtSecret));
+      clientB = await connectUser(url, JwtUtil.sign({ sub: userIds[1]!, email: emails[1]! }, config.jwtSecret));
+
+      // 1. WebRTC CALL_OFFER to non-friend must be rejected
+      const rejectPromise = waitForEvent<{ targetUserId: string; reason: string }>(clientA, SocketEvents.CALL_REJECT);
+      clientA.emit(SocketEvents.CALL_OFFER, { targetUserId: userIds[1]!, sdp: { type: 'offer', sdp: 'fake' } });
+      const rejected = await rejectPromise;
+      expect(rejected.reason).toContain('bạn bè');
+
+      // 2. MESSAGE_REACTION spoofed to non-friend must be dropped (clientB should NOT receive it)
+      let receivedReaction = false;
+      clientB.on(SocketEvents.MESSAGE_REACTION, () => {
+        receivedReaction = true;
+      });
+      clientA.emit(SocketEvents.MESSAGE_REACTION, { messageId: randomUUID(), emoji: '❤️', targetUserId: userIds[1]! });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(receivedReaction).toBe(false);
+    } finally {
+      clientA?.disconnect();
+      clientB?.disconnect();
+      await new Promise<void>((resolve) => socketServer.close(() => resolve()));
+      await gateway?.close();
+      await matchingEngine.close();
+      await sessionCoordinator.close();
+      const cleanupRedis = new Redis(config.redisUrl);
+      const testKeys = await cleanupRedis.keys(`${redisNamespace}:*`);
+      if (testKeys.length > 0) await cleanupRedis.del(...testKeys);
+      await cleanupRedis.quit();
+      await db.delete(users).where(inArray(users.id, userIds));
+    }
+  });
 });

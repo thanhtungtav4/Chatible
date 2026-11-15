@@ -32,7 +32,17 @@ export class ImageCompressor {
       throw new Error('Dung lượng ảnh phải nhỏ hơn 30 MB.');
     }
 
-    const { promise, resolve, reject } = Promise.withResolvers<CompressionResult>();
+    const { promise, resolve, reject } = typeof Promise.withResolvers === 'function'
+      ? Promise.withResolvers<CompressionResult>()
+      : (() => {
+          let resolve!: (val: CompressionResult) => void;
+          let reject!: (err?: unknown) => void;
+          const promise = new Promise<CompressionResult>((res, rej) => {
+            resolve = res;
+            reject = rej;
+          });
+          return { promise, resolve, reject };
+        })();
     const img = new Image();
     const reader = new FileReader();
 

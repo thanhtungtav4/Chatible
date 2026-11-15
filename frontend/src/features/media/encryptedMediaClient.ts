@@ -27,6 +27,7 @@ export interface UploadEncryptedMediaInput {
   isAdult?: boolean;
   senderConfirmed18Plus?: boolean;
   senderConfirmedConsent?: boolean;
+  onProgress?: (percent: number) => void;
 }
 
 export async function uploadAndFinalizeEncryptedMedia(
@@ -37,6 +38,8 @@ export async function uploadAndFinalizeEncryptedMedia(
     throw new Error('Không xác định được định dạng media.');
   }
 
+  input.onProgress?.(5);
+
   const dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   const fileIv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertextWithTag = new Uint8Array(
@@ -45,6 +48,8 @@ export async function uploadAndFinalizeEncryptedMedia(
   const ciphertext = ciphertextWithTag.slice(0, -16);
   const fileAuthTag = ciphertextWithTag.slice(-16);
   const rawDek = new Uint8Array(await crypto.subtle.exportKey('raw', dek));
+
+  input.onProgress?.(20);
 
   let presignResponse: Response;
   try {
@@ -82,14 +87,36 @@ export async function uploadAndFinalizeEncryptedMedia(
     throw new Error(presign.error || 'Không thể cấp URL tải media.');
   }
 
-  const uploadResponse = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/octet-stream', 'x-amz-meta-media-id': mediaId },
-    body: ciphertext,
+  input.onProgress?.(30);
+
+  // Upload ciphertext via XHR to support byte-level upload progress tracking
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('x-amz-meta-media-id', mediaId);
+    if (input.onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const rawPct = event.loaded / event.total;
+          const mapped = Math.min(92, Math.max(30, Math.round(30 + rawPct * 62)));
+          input.onProgress?.(mapped);
+        }
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Tải tệp lên máy chủ thất bại (HTTP ${xhr.status}).`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Lỗi kết nối mạng khi tải tệp lên.'));
+    xhr.onabort = () => reject(new Error('Tải tệp bị hủy.'));
+    xhr.send(ciphertext);
   });
-  if (!uploadResponse.ok) {
-    throw new Error('Không thể tải ciphertext lên kho media.');
-  }
+
+  input.onProgress?.(95);
 
   const completeResponse = await apiFetch(`/api/v1/media/${encodeURIComponent(mediaId)}/complete`, {
     method: 'POST',
@@ -105,6 +132,8 @@ export async function uploadAndFinalizeEncryptedMedia(
   if (!completeResponse.ok || !completeBody.verifiedMime) {
     throw new Error(completeBody.error || 'Máy chủ không xác thực được tệp media vừa tải lên.');
   }
+
+  input.onProgress?.(100);
 
   return {
     mediaId,

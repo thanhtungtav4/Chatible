@@ -28,7 +28,6 @@ import {
   getNotificationPermission,
   requestNotificationPermission,
   triggerPushNotification,
-  isNotificationSupported,
 } from '../notifications/pushNotification.js';
 import { isSoundEnabled, setSoundEnabled, playMatchFoundSound } from '../audio/soundEffects.js';
 import { usePwaInstall } from '../pwa/usePwaInstall.js';

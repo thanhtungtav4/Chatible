@@ -87,7 +87,7 @@ export class RecentSessionsController {
         if (this.cryptoService && rawMessages.length > 0) {
           decryptedMessages = await Promise.all(
             rawMessages.map(async (m) => {
-              let text = '';
+              let text: string;
               try {
                 text = await this.cryptoService!.decrypt({
                   ciphertext: m.ciphertext,

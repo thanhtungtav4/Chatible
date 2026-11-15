@@ -75,7 +75,15 @@ export class AudioRecorder {
   }
 
   async stop(): Promise<AudioRecordingResult> {
-    const { promise, resolve } = Promise.withResolvers<AudioRecordingResult>();
+    const { promise, resolve } = typeof Promise.withResolvers === 'function'
+      ? Promise.withResolvers<AudioRecordingResult>()
+      : (() => {
+          let resolve!: (val: AudioRecordingResult) => void;
+          const promise = new Promise<AudioRecordingResult>((res) => {
+            resolve = res;
+          });
+          return { promise, resolve };
+        })();
 
     if (this.sampleInterval) clearInterval(this.sampleInterval);
     this.sampleInterval = null;

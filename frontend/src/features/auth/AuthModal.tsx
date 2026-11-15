@@ -13,6 +13,9 @@ declare global {
             callback: (response: { credential?: string }) => void;
             auto_select?: boolean;
             cancel_on_tap_outside?: boolean;
+            ux_mode?: string;
+            itp_support?: boolean;
+            [key: string]: unknown;
           }) => void;
           renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
           prompt: () => void;

@@ -98,7 +98,18 @@ const defaultRepository: MediaRepository = {
       .from(mediaConsents)
       .where(and(eq(mediaConsents.sessionId, sessionId), eq(mediaConsents.recipientId, recipientId)))
       .limit(1);
-    return rows[0] ?? null;
+    if (rows[0]) return rows[0];
+
+    // Fallback to recipient's profile mediaConsentDefault setting
+    const [profile] = await db
+      .select({ mediaConsentDefault: profiles.mediaConsentDefault })
+      .from(profiles)
+      .where(eq(profiles.userId, recipientId))
+      .limit(1);
+    if (profile?.mediaConsentDefault) {
+      return { sessionId, recipientId, enabled: true };
+    }
+    return null;
   },
   async upsertConsent(sessionId, recipientId, enabled) {
     const now = new Date();

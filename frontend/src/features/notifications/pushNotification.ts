@@ -14,16 +14,22 @@ export async function syncStealthState(): Promise<boolean> {
       cachedStealthMode = Boolean(data.enabled);
       try {
         localStorage.setItem('chatible_stealth_mode', String(cachedStealthMode));
-      } catch {}
+      } catch {
+        // ignore storage quota errors
+      }
       isStealthSynced = true;
       return cachedStealthMode;
     }
-  } catch {}
+  } catch {
+    // ignore network sync errors
+  }
 
   // Fallback to localStorage if offline or network error
   try {
     cachedStealthMode = localStorage.getItem('chatible_stealth_mode') === 'true';
-  } catch {}
+  } catch {
+    // ignore storage access errors
+  }
   return cachedStealthMode;
 }
 
@@ -34,7 +40,9 @@ export function setLocalStealthMode(enabled: boolean): void {
   cachedStealthMode = enabled;
   try {
     localStorage.setItem('chatible_stealth_mode', String(enabled));
-  } catch {}
+  } catch {
+    // ignore storage quota errors
+  }
 }
 
 /**
@@ -44,7 +52,9 @@ export function getLocalStealthMode(): boolean {
   if (!isStealthSynced) {
     try {
       cachedStealthMode = localStorage.getItem('chatible_stealth_mode') === 'true';
-    } catch {}
+    } catch {
+      // ignore storage access errors
+    }
   }
   return cachedStealthMode;
 }
@@ -106,8 +116,8 @@ export async function triggerPushNotification(payload: PushNotificationPayload):
 
   const isStealth = getLocalStealthMode();
 
-  let displayTitle = '';
-  let displayBody = '';
+  let displayTitle: string;
+  let displayBody: string;
   const displayIcon = '/favicon.svg';
 
   if (isStealth) {
@@ -158,11 +168,13 @@ export async function triggerPushNotification(payload: PushNotificationPayload):
           tag: payload.tag || `chatible-${payload.type}`,
           renotify: true,
           data: { url: payload.url || '/' },
-        });
+        } as unknown as NotificationOptions);
         return;
       }
     }
-  } catch {}
+  } catch {
+    // fallback if service worker notification fails
+  }
 
   // 2. Fallback to standard Notification API
   try {
@@ -176,5 +188,7 @@ export async function triggerPushNotification(payload: PushNotificationPayload):
       window.focus();
       notif.close();
     };
-  } catch {}
+  } catch {
+    // ignore desktop notification errors
+  }
 }

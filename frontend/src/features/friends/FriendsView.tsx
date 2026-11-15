@@ -78,7 +78,26 @@ type FriendMessage = OrderedFriendMessage & {
   isRead?: boolean;
   isPending?: boolean;
   isError?: boolean;
+  uploadProgress?: number;
+  localPreviewUrl?: string;
 };
+
+function AudioWaveform({ samples, durationSec }: { samples: number[]; durationSec?: number }) {
+  if (samples.length !== 30) return null;
+  return (
+    <div className="flex items-end gap-1" role="img" aria-label={`Dạng sóng âm thanh${durationSec ? `, ${durationSec} giây` : ''}`}>
+      {samples.map((sample, index) => (
+        <span
+          key={index}
+          aria-hidden="true"
+          className="w-1 rounded-full bg-current opacity-70"
+          style={{ height: `${2 + Math.round(Math.max(0, Math.min(1, sample)) * 22)}px` }}
+        />
+      ))}
+      {durationSec !== undefined && <span className="ml-1 self-center text-[10px] opacity-70">{durationSec}s</span>}
+    </div>
+  );
+}
 
 type FriendsViewProps = {
   currentUserId: string;
@@ -187,7 +206,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   messagesRef.current = messages;
 
   const sendFriendMediaMessage = useCallback(
-    async ({ media, isAdult }: { media: UploadedSessionMedia; isAdult: boolean }) => {
+    async ({ media, isAdult, tempId }: { media: UploadedSessionMedia; isAdult: boolean; tempId?: string }) => {
       const friendId = selectedFriendIdRef.current;
       if (!friendId) {
         throw new Error('Phiên trò chuyện bạn bè chưa sẵn sàng.');
@@ -206,7 +225,12 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       });
       const message = await readApi<FriendMessage>(response);
       if (selectedFriendIdRef.current === friendId) {
-        setMessages((current) => mergeFriendMessages(current, [message]));
+        setMessages((current) => {
+          if (tempId && current.some((m) => m.id === tempId)) {
+            return current.map((m) => (m.id === tempId ? { ...message, uploadProgress: 100 } : m));
+          }
+          return mergeFriendMessages(current, [message]);
+        });
       }
       playMessageSentSound();
     },
@@ -222,6 +246,37 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     fileTooLargeMessage: () => 'Dung lượng tệp vượt quá giới hạn cho phép.',
     onSendMediaMessage: sendFriendMediaMessage,
     onError: setMessageError,
+    onUploadStart: (tempId, file, mediaType, localPreviewUrl) => {
+      const optimisticMessage: FriendMessage = {
+        id: tempId,
+        senderId: currentUserId,
+        receiverId: selectedFriendIdRef.current || '',
+        messageType: mediaType,
+        content: JSON.stringify({
+          mediaId: tempId,
+          contentType: file.type || (mediaType === 'IMAGE' ? 'image/webp' : 'audio/webm'),
+          mediaType,
+        }),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        isPending: true,
+        uploadProgress: 5,
+        localPreviewUrl,
+      };
+      setMessages((prev) => [...prev, optimisticMessage]);
+      playMessageSentSound();
+    },
+    onUploadProgress: (tempId, percent) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, uploadProgress: percent } : m))
+      );
+    },
+    onUploadFinished: (tempId, error) => {
+      if (error) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, isPending: false, isError: true, uploadProgress: undefined } : m))
+        );
+      }
+    },
   });
 
   const mediaHandlersRef = useRef(sessionMedia);
@@ -1157,6 +1212,13 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                           isMine={isMine}
                           viewState={sessionMedia.mediaViews[message.id]}
                           busy={sessionMedia.mediaBusy}
+                          localPreviewUrl={message.localPreviewUrl}
+                          uploadProgress={message.uploadProgress}
+                          audioExtra={
+                            media.waveform ? (
+                              <AudioWaveform samples={media.waveform} durationSec={media.durationSec} />
+                            ) : null
+                          }
                           onView={() => void sessionMedia.openMediaPreview(message.id, media.mediaId, media.contentType)}
                           onRevoke={() => void sessionMedia.revokeMediaPreview(message.id, media.mediaId)}
                         />

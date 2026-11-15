@@ -1,4 +1,3 @@
-import React from 'react';
 import { Smartphone, Share, PlusSquare, MoreVertical, X, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface PwaInstallModalProps {

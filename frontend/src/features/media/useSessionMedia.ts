@@ -34,10 +34,13 @@ export interface UseSessionMediaOptions {
   voiceFilenamePrefix: string;
   partnerNotAdultConsentMessage: string;
   fileTooLargeMessage?: (mediaType: ClientMediaType) => string;
-  onSendMediaMessage: (params: SendSessionMediaParams) => Promise<void>;
+  onSendMediaMessage: (params: SendSessionMediaParams & { tempId?: string }) => Promise<void>;
   onError: (message: string | null) => void;
   onConsentChanged?: (kind: 'MEDIA' | 'ADULT', enabled: boolean) => void;
   onRevoked?: (mediaId: string) => void;
+  onUploadStart?: (tempId: string, file: File, mediaType: ClientMediaType, localPreviewUrl?: string) => void;
+  onUploadProgress?: (tempId: string, percent: number) => void;
+  onUploadFinished?: (tempId: string, error?: string) => void;
 }
 
 const DEFAULT_SIZE_ERROR = (mediaType: ClientMediaType): string => {
@@ -67,6 +70,9 @@ export function useSessionMedia({
   onError,
   onConsentChanged,
   onRevoked,
+  onUploadStart,
+  onUploadProgress,
+  onUploadFinished,
 }: UseSessionMediaOptions) {
   const [mediaConsent, setMediaConsent] = useState(false);
   const [partnerMediaConsent, setPartnerMediaConsent] = useState(false);
@@ -97,6 +103,9 @@ export function useSessionMedia({
   const onSendRef = useRef(onSendMediaMessage);
   const onErrorRef = useRef(onError);
   const onConsentChangedRef = useRef(onConsentChanged);
+  const onUploadStartRef = useRef(onUploadStart);
+  const onUploadProgressRef = useRef(onUploadProgress);
+  const onUploadFinishedRef = useRef(onUploadFinished);
 
   sessionIdRef.current = sessionId;
   recipientIdRef.current = recipientId;
@@ -104,6 +113,9 @@ export function useSessionMedia({
   onSendRef.current = onSendMediaMessage;
   onErrorRef.current = onError;
   onConsentChangedRef.current = onConsentChanged;
+  onUploadStartRef.current = onUploadStart;
+  onUploadProgressRef.current = onUploadProgress;
+  onUploadFinishedRef.current = onUploadFinished;
 
   const isContextCurrent = useCallback((expectedSessionId: string, expectedRecipientId: string) => {
     return (
@@ -261,7 +273,8 @@ export function useSessionMedia({
     file: File,
     mediaType: ClientMediaType,
     additionalMeta: Pick<UploadedSessionMedia, 'waveform' | 'durationSec' | 'width' | 'height'> = {},
-    adultFlags: { isAdult?: boolean; senderConfirmed18Plus?: boolean; senderConfirmedConsent?: boolean } = {}
+    adultFlags: { isAdult?: boolean; senderConfirmed18Plus?: boolean; senderConfirmedConsent?: boolean } = {},
+    tempId?: string
   ) => {
     if (!isContextCurrent(expectedSessionId, expectedRecipientId)) {
       return;
@@ -275,6 +288,9 @@ export function useSessionMedia({
       isAdult: adultFlags.isAdult,
       senderConfirmed18Plus: adultFlags.senderConfirmed18Plus,
       senderConfirmedConsent: adultFlags.senderConfirmedConsent,
+      onProgress: (percent) => {
+        if (tempId) onUploadProgressRef.current?.(tempId, percent);
+      },
     });
 
     if (!isContextCurrent(expectedSessionId, expectedRecipientId)) {
@@ -289,7 +305,8 @@ export function useSessionMedia({
       ...additionalMeta,
     };
 
-    await onSendRef.current({ media, isAdult: Boolean(adultFlags.isAdult) });
+    await onSendRef.current({ media, isAdult: Boolean(adultFlags.isAdult), tempId });
+    if (tempId) onUploadFinishedRef.current?.(tempId);
   }, [isContextCurrent]);
 
   const compressAndSendMedia = useCallback(async (
@@ -303,13 +320,20 @@ export function useSessionMedia({
     if (!isContextCurrent(capturedSessionId, capturedRecipientId)) return;
     setUploadBusy(true);
     onErrorRef.current(null);
+    const tempId = crypto.randomUUID();
+    const localPreviewUrl = mediaType === 'IMAGE' ? URL.createObjectURL(file) : undefined;
+    onUploadStartRef.current?.(tempId, file, mediaType, localPreviewUrl);
+    onUploadProgressRef.current?.(tempId, 5);
+
     try {
       await compressAndUploadWithContextGuard<File, { width: number; height: number }>({
         isContextCurrent: () => isContextCurrent(capturedSessionId, capturedRecipientId),
         isImage: mediaType === 'IMAGE',
         rawFile: file,
         compressImage: async (raw) => {
+          onUploadProgressRef.current?.(tempId, 10);
           const compressed = await ImageCompressor.compress(raw);
+          onUploadProgressRef.current?.(tempId, 25);
           return {
             file: compressed.file,
             meta: { width: compressed.width, height: compressed.height },
@@ -322,13 +346,16 @@ export function useSessionMedia({
             targetFile,
             mediaType,
             meta ?? {},
-            adultFlags
+            adultFlags,
+            tempId
           );
         },
       });
     } catch (error) {
       if (isContextCurrent(capturedSessionId, capturedRecipientId)) {
-        onErrorRef.current(error instanceof Error ? error.message : defaultError);
+        const errorMsg = error instanceof Error ? error.message : defaultError;
+        onErrorRef.current(errorMsg);
+        onUploadFinishedRef.current?.(tempId, errorMsg);
       }
     } finally {
       if (mountedRef.current) setUploadBusy(false);
@@ -469,10 +496,13 @@ export function useSessionMedia({
         `${voiceFilenamePrefix}-${Date.now()}.${extension}`,
         { type: recording.blob.type }
       );
+      const tempId = crypto.randomUUID();
+      onUploadStartRef.current?.(tempId, file, 'AUDIO');
+      onUploadProgressRef.current?.(tempId, 20);
       await uploadAndEmitMedia(capturedSessionId, capturedRecipientId, file, 'AUDIO', {
         durationSec: recording.durationSeconds,
         waveform: recording.waveform,
-      });
+      }, {}, tempId);
     } catch (error) {
       if (audioRecorderRef.current === recorder) {
         audioRecorderRef.current = null;

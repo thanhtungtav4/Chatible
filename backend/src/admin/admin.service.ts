@@ -1008,7 +1008,9 @@ export class AdminService {
         if (rawSecret && rawSecret.startsWith('enc:')) {
           try {
             rawSecret = await decryptSettingSecret(rawSecret, this.cryptoService);
-          } catch {}
+          } catch {
+            // ignore decryption failure on fallback
+          }
         }
         secretAccessKey = rawSecret;
       }
@@ -1133,7 +1135,9 @@ export class AdminService {
       const map = new Map(rows.map((r) => [r.key, r.value]));
       if (map.get('admin.auth.username')) storedUsername = map.get('admin.auth.username')!;
       if (map.get('admin.auth.password_hash')) storedPasswordHash = map.get('admin.auth.password_hash')!;
-    } catch {}
+    } catch {
+      // ignore database lookup errors during credential check
+    }
 
     // 1. Check Username + Password
     if (trimmedUser && trimmedPass) {
@@ -1199,7 +1203,9 @@ export class AdminService {
           .filter(Boolean);
         if (dbEmails.length > 0) allowedEmails = dbEmails;
       }
-    } catch {}
+    } catch {
+      // ignore settings load failure
+    }
 
     return allowedEmails.includes(cleanEmail);
   }

@@ -1,4 +1,3 @@
-import React from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle, FileText, Gavel, Mail, Scale, ShieldAlert, UserX } from 'lucide-react';
 
 interface LegalPageProps {

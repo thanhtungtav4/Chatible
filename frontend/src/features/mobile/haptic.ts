@@ -1,13 +1,16 @@
 /**
  * Provides gentle haptic tactile feedback on mobile devices that support the Vibration API
  */
-export type HapticType = 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'error';
+export type HapticType = 'light' | 'medium' | 'heavy' | 'selection' | 'success' | 'warning' | 'error';
 
 export function triggerHaptic(type: HapticType = 'light'): void {
   if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
 
   try {
     switch (type) {
+      case 'selection':
+        navigator.vibrate(8);
+        break;
       case 'light':
         navigator.vibrate(12);
         break;

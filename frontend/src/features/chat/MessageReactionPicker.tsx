@@ -1,5 +1,4 @@
-import React from 'react';
-import { SmilePlus } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 
 export const POPULAR_REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '👍', '🔥'] as const;
 
@@ -9,8 +8,31 @@ interface ReactionPickerProps {
 }
 
 export function ReactionPickerPopup({ onSelect, onClose }: ReactionPickerProps) {
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick, true);
+    document.addEventListener('touchstart', handleOutsideClick, true);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick, true);
+      document.removeEventListener('touchstart', handleOutsideClick, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [onClose]);
+
   return (
     <div
+      ref={popupRef}
       role="menu"
       aria-label="Chọn biểu cảm"
       className="absolute -top-10 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full bg-white px-2 py-1 shadow-lg shadow-black/10 border border-slate-200 animate-in fade-in zoom-in-95 duration-150"

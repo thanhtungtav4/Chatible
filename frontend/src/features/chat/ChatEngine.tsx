@@ -42,6 +42,8 @@ type ChatMessage = {
   reactions?: Record<string, string>;
   isRead?: boolean;
   status?: 'sending' | 'sent' | 'error';
+  uploadProgress?: number;
+  localPreviewUrl?: string;
 };
 type ReportRequest = { sessionId: string; reportedUserId: string; evidenceMessageIds: string[] };
 
@@ -144,7 +146,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
   const stopTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeReactionMessageId, setActiveReactionMessageId] = useState<string | null>(null);
 
-  const emitSocketMediaMessage = useCallback(async ({ media, isAdult }: { media: UploadedSessionMedia; isAdult: boolean }) => {
+  const emitSocketMediaMessage = useCallback(async ({ media, isAdult, tempId }: { media: UploadedSessionMedia; isAdult: boolean; tempId?: string }) => {
     const socket = socketRef.current;
     if (!socket?.connected) throw new Error('Chưa kết nối máy chủ.');
     const clientMessageId = crypto.randomUUID();
@@ -166,19 +168,27 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
             reject(new Error(ack?.error || 'Không gửi được media.'));
             return;
           }
-          setMessages((previous) => [...previous, {
-            id: ack.messageId as string,
-            sender: 'me',
-            text: isAdult
-              ? `🔞 ${media.mediaType === 'IMAGE' ? 'Ảnh 18+ đã gửi' : 'Video 18+ đã gửi'}`
-              : media.mediaType === 'IMAGE'
-              ? 'Ảnh đã gửi'
-              : media.mediaType === 'AUDIO'
-              ? 'Audio đã gửi'
-              : 'Video đã gửi',
-            media,
-            time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          }]);
+          setMessages((previous) => {
+            const resolvedMessage: ChatMessage = {
+              id: ack.messageId as string,
+              sender: 'me',
+              text: isAdult
+                ? `🔞 ${media.mediaType === 'IMAGE' ? 'Ảnh 18+ đã gửi' : 'Video 18+ đã gửi'}`
+                : media.mediaType === 'IMAGE'
+                ? 'Ảnh đã gửi'
+                : media.mediaType === 'AUDIO'
+                ? 'Audio đã gửi'
+                : 'Video đã gửi',
+              media,
+              uploadProgress: 100,
+              status: 'sent',
+              time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+            };
+            if (tempId && previous.some((m) => m.id === tempId)) {
+              return previous.map((m) => (m.id === tempId ? { ...m, ...resolvedMessage } : m));
+            }
+            return [...previous, resolvedMessage];
+          });
           playMessageSentSound();
           resolve();
         }
@@ -194,6 +204,38 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     partnerNotAdultConsentMessage: 'Đối phương chưa bật quyền "Nhận nội dung 18+". Hãy chờ đối phương đồng ý trước.',
     onSendMediaMessage: emitSocketMediaMessage,
     onError: setActionError,
+    onUploadStart: (tempId, file, mediaType, localPreviewUrl) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          sender: 'me',
+          text: mediaType === 'IMAGE' ? 'Ảnh đang tải lên…' : 'Ghi âm đang gửi…',
+          time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          status: 'sending',
+          uploadProgress: 5,
+          localPreviewUrl,
+          media: {
+            mediaId: tempId,
+            contentType: file.type || (mediaType === 'IMAGE' ? 'image/webp' : 'audio/webm'),
+            mediaType,
+          },
+        },
+      ]);
+      playMessageSentSound();
+    },
+    onUploadProgress: (tempId, percent) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, uploadProgress: percent } : m))
+      );
+    },
+    onUploadFinished: (tempId, error) => {
+      if (error) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, status: 'error', uploadProgress: undefined } : m))
+        );
+      }
+    },
     onConsentChanged: (kind, enabled) => {
       socketRef.current?.emit(
         kind === 'MEDIA' ? SocketEvents.MEDIA_CONSENT_UPDATE : SocketEvents.MEDIA_ADULT_CONSENT_UPDATE,
@@ -1161,6 +1203,8 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                           viewState={sessionMedia.mediaViews[message.id]}
                           revokedFallback={message.media.revoked}
                           busy={sessionMedia.mediaBusy}
+                          localPreviewUrl={message.localPreviewUrl}
+                          uploadProgress={message.uploadProgress}
                           audioExtra={
                             message.media.waveform ? (
                               <AudioWaveform samples={message.media.waveform} durationSec={message.media.durationSec} />
