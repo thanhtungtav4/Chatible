@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import { SocketEvents } from '@chatible/shared';
 import type { ChatState, UserPublicProfile, SendMessageDto, TargetGender } from '@chatible/shared';
-import { Search, Send, UserPlus, Check, CheckCheck, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft, SmilePlus } from 'lucide-react';
+import { Search, Send, UserPlus, Check, CheckCheck, Clock, RefreshCw, AlertTriangle, WifiOff, Sparkles, ImagePlus, Mic, ShieldCheck, ArrowRight, ArrowDown, Flame, ArrowLeft, SmilePlus } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '../../api.js';
 import { AdultReceiveConsentModal, AdultSenderCommitmentsModal } from '../media/AdultConsentModals.js';
 import { MediaAttachmentPreview } from '../media/MediaAttachmentPreview.js';
@@ -41,6 +41,7 @@ type ChatMessage = {
   media?: MediaMessage;
   reactions?: Record<string, string>;
   isRead?: boolean;
+  status?: 'sending' | 'sent' | 'error';
 };
 type ReportRequest = { sessionId: string; reportedUserId: string; evidenceMessageIds: string[] };
 
@@ -60,20 +61,26 @@ function loadLocalAnonSession(userId: string) {
         isAlreadyFriend?: boolean;
       };
     }
-  } catch {}
+  } catch {
+    // ignore parse error
+  }
   return null;
 }
 
 function saveLocalAnonSession(userId: string, data: { sessionId: string; partner: UserPublicProfile; messages: ChatMessage[]; chatState: ChatState; isAlreadyFriend?: boolean }) {
   try {
     localStorage.setItem(getAnonStorageKey(userId), JSON.stringify(data));
-  } catch {}
+  } catch {
+    // ignore storage quota error
+  }
 }
 
 function clearLocalAnonSession(userId: string) {
   try {
     localStorage.removeItem(getAnonStorageKey(userId));
-  } catch {}
+  } catch {
+    // ignore storage removal error
+  }
 }
 
 interface ChatEngineProps {
@@ -312,7 +319,6 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     socket.on('disconnect', (reason: string) => {
       if (reason === 'io client disconnect' || !sessionIdRef.current) return;
       shouldResumeRef.current = true;
-      setReconnectCountdown(600);
       setChatState('RECONNECTING');
     });
     socket.on('connect', () => {
@@ -330,6 +336,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
             setIsAlreadyFriend(ack.isFriend);
           }
           setChatState(ack.state === 'RECONNECTING' ? 'RECONNECTING' : 'CHATTING');
+          // Sync any messages missed while disconnected (RACE-02 fix)
+          void apiFetch('/api/v1/sessions/active')
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data: { activeSession?: { messages: ChatMessage[] } | null } | null) => {
+              if (data?.activeSession?.messages && Array.isArray(data.activeSession.messages)) {
+                setMessages(data.activeSession.messages);
+              }
+            })
+            .catch(() => {});
         } else {
           shouldResumeRef.current = false;
           clearLocalAnonSession(currentUser.id);
@@ -530,7 +545,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
 
   useEffect(() => {
     if (chatState !== 'WAITING') return;
-    if (secondsWaiting >= 8 && !isFilterExpanded) {
+    if (secondsWaiting >= 4 && !isFilterExpanded) {
       handleExpandFilter();
     }
   }, [chatState, secondsWaiting, isFilterExpanded, handleExpandFilter]);
@@ -617,19 +632,42 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
 
     setActionError(null);
     const clientMessageId = crypto.randomUUID();
+    const optimisticTime = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+    // Optimistic UI: Immediately clear input and render message bubble
+    setInputMessage('');
+    playMessageSentSound();
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: clientMessageId,
+        sender: 'me',
+        text,
+        time: optimisticTime,
+        status: 'sending',
+      },
+    ]);
+
     socket.emit(SocketEvents.MESSAGE_SEND, { type: 'TEXT', content: text, clientMessageId } as SendMessageDto, (ack: { success: boolean; error?: string; messageId?: string; sentAt?: string }) => {
       if (!ack?.success || !ack.messageId) {
         setActionError(ack?.error || 'Không gửi được tin nhắn.');
+        setMessages((previous) =>
+          previous.map((m) => (m.id === clientMessageId ? { ...m, status: 'error' } : m))
+        );
         return;
       }
-      setMessages((previous) => [...previous, {
-        id: ack.messageId as string,
-        sender: 'me',
-        text,
-        time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-      }]);
-      setInputMessage('');
-      playMessageSentSound();
+      setMessages((previous) =>
+        previous.map((m) =>
+          m.id === clientMessageId
+            ? {
+                ...m,
+                id: ack.messageId as string,
+                status: 'sent',
+                time: new Date(ack.sentAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              }
+            : m
+        )
+      );
     });
   };
 
@@ -656,7 +694,15 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
     setShowEndConfirm(false);
     clearLocalAnonSession(currentUser.id);
     socketRef.current?.emit(SocketEvents.CHAT_END);
-    setChatState('ENDED');
+    sessionIdRef.current = null;
+    partnerRef.current = null;
+    setSessionId(null);
+    setPartner(null);
+    setMessages([]);
+    setIsFriendRequested(false);
+    setIsAlreadyFriend(false);
+    sessionMedia.clearAllMediaPreviews();
+    setChatState('IDLE');
   };
 
   const handleNextChat = () => {
@@ -1135,7 +1181,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                       title="Thả biểu cảm"
                       className={`absolute -top-2 ${
                         message.sender === 'me' ? '-left-6' : '-right-6'
-                      } hidden group-hover/msg:flex items-center justify-center h-5 w-5 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 shadow-xs z-10 transition`}
+                      } flex sm:hidden group-hover/msg:flex items-center justify-center h-5 w-5 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 shadow-xs z-10 transition`}
                     >
                       <SmilePlus size={11} />
                     </button>
@@ -1150,10 +1196,20 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
                   <span className="mt-1 px-1 text-[9.5px] font-medium text-slate-400 inline-flex items-center gap-1">
                     {message.time}
                     {message.sender === 'me' && (
-                      message.isRead ? (
-                        <CheckCheck size={12} className="text-blue-500 inline shrink-0" title="Đã xem" />
+                      message.status === 'sending' ? (
+                        <span title="Đang gửi..." className="inline-flex items-center">
+                          <Clock size={11} className="text-slate-400 animate-pulse inline shrink-0" />
+                        </span>
+                      ) : message.status === 'error' ? (
+                        <span title="Chưa gửi được" className="text-rose-500 font-bold inline shrink-0 text-[10px]">!</span>
+                      ) : message.isRead ? (
+                        <span title="Đã xem" className="inline-flex items-center">
+                          <CheckCheck size={12} className="text-blue-500 inline shrink-0" />
+                        </span>
                       ) : (
-                        <Check size={12} className="text-slate-400 inline shrink-0" title="Đã gửi" />
+                        <span title="Đã gửi" className="inline-flex items-center">
+                          <Check size={12} className="text-slate-400 inline shrink-0" />
+                        </span>
                       )
                     )}
                   </span>
@@ -1359,20 +1415,7 @@ export function ChatEngine({ currentUser, onOpenReport, resetTrigger }: ChatEngi
             <div className="mt-5 flex flex-col gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setShowEndConfirm(false);
-                  clearLocalAnonSession(currentUser.id);
-                  socketRef.current?.emit(SocketEvents.CHAT_END);
-                  sessionIdRef.current = null;
-                  partnerRef.current = null;
-                  setSessionId(null);
-                  setPartner(null);
-                  setMessages([]);
-                  setIsFriendRequested(false);
-                  setIsAlreadyFriend(false);
-                  sessionMedia.clearAllMediaPreviews();
-                  setChatState('IDLE');
-                }}
+                onClick={handleEndChat}
                 className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-600/30 hover:bg-blue-700"
               >
                 Kết thúc & Về trang tìm bạn

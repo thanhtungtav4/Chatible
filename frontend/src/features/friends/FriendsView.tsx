@@ -7,6 +7,7 @@ import {
   Ban,
   Check,
   CheckCheck,
+  Clock,
   Flame,
   ImagePlus,
   MessageCircle,
@@ -75,6 +76,8 @@ type FriendMessage = OrderedFriendMessage & {
   expiresAt: string;
   reactions?: Record<string, string>;
   isRead?: boolean;
+  isPending?: boolean;
+  isError?: boolean;
 };
 
 type FriendsViewProps = {
@@ -156,6 +159,11 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
   const [callDuration, setCallDuration] = useState(0);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [callError, setCallError] = useState<string | null>(null);
+
+  const callStateRef = useRef(callState);
+  callStateRef.current = callState;
+  const callerInfoRef = useRef(callerInfo);
+  callerInfoRef.current = callerInfo;
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -273,6 +281,9 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
     }
     incomingSdpRef.current = null;
     pendingIceCandidatesRef.current = [];
@@ -476,9 +487,9 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
 
       if (incoming.senderId !== currentUserId) {
         let preview = incoming.content || '';
-        if (incoming.type === 'IMAGE') preview = '📷 Đã gửi một hình ảnh';
-        else if (incoming.type === 'AUDIO') preview = '🎵 Đã gửi một đoạn ghi âm';
-        else if (incoming.type === 'VIDEO') preview = '🎥 Đã gửi một video';
+        if (incoming.messageType === 'IMAGE') preview = '📷 Đã gửi một hình ảnh';
+        else if (incoming.messageType === 'AUDIO') preview = '🎵 Đã gửi một đoạn ghi âm';
+        else if (incoming.messageType === 'VIDEO') preview = '🎥 Đã gửi một video';
 
         const senderFriend = friendsRef.current.find((f) => f.userId === incoming.senderId);
         const senderName = senderFriend?.nickname || 'Bạn bè';
@@ -531,6 +542,13 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     });
 
     socket.on(SocketEvents.CALL_OFFER, (data: { callerId: string; callerNickname: string; sdp: RTCSessionDescriptionInit }) => {
+      if (callStateRef.current !== 'idle') {
+        socket.emit(SocketEvents.CALL_REJECT, {
+          targetUserId: data.callerId,
+          reason: 'Người dùng đang trong cuộc gọi khác.',
+        });
+        return;
+      }
       incomingSdpRef.current = data.sdp;
       setCallerInfo({ id: data.callerId, nickname: data.callerNickname || 'Bạn bè' });
       setCallState('incoming');
@@ -599,6 +617,10 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     });
 
     return () => {
+      const activeCaller = callerInfoRef.current?.id || selectedFriendIdRef.current;
+      if (callStateRef.current !== 'idle' && activeCaller && socketRef.current?.connected) {
+        socketRef.current.emit(SocketEvents.CALL_END, { targetUserId: activeCaller });
+      }
       cleanupCall();
       if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
       if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
@@ -833,7 +855,7 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
     event.preventDefault();
     const content = draft.trim();
     const targetFriendId = selectedFriendId;
-    if (!content || !targetFriendId || isSending) return;
+    if (!content || !targetFriendId) return;
 
     if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
     if (isTypingEmittedRef.current) {
@@ -841,24 +863,45 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
       socketRef.current?.emit(SocketEvents.TYPING_STOP, { targetUserId: targetFriendId });
     }
 
-    setIsSending(true);
+    const clientMsgId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    const optimisticMessage: FriendMessage = {
+      id: clientMsgId,
+      senderId: currentUserId,
+      receiverId: targetFriendId,
+      content,
+      type: 'TEXT',
+      messageType: 'TEXT',
+      createdAt: nowIso,
+      sentAt: nowIso,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      reactions: {},
+      isPending: true,
+    };
+
+    // Optimistic UI: Immediately clear input draft, play sent sound, and display bubble
+    setDraft('');
+    playMessageSentSound();
     setMessageError(null);
+    setMessages((current) => mergeFriendMessages(current, [optimisticMessage]));
+
     try {
       const response = await apiFetch(`/api/v1/friends/${encodeURIComponent(targetFriendId)}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, clientMessageId: crypto.randomUUID() }),
+        body: JSON.stringify({ content, clientMessageId: clientMsgId }),
       });
       const message = await readApi<FriendMessage>(response);
       if (selectedFriendIdRef.current === targetFriendId) {
-        setMessages((current) => mergeFriendMessages(current, [message]));
+        setMessages((current) =>
+          current.map((m) => (m.id === clientMsgId ? { ...message, isPending: false } : m))
+        );
       }
-      setDraft('');
-      playMessageSentSound();
     } catch (requestError) {
       setMessageError(requestError instanceof Error ? requestError.message : 'Không thể gửi tin nhắn.');
-    } finally {
-      setIsSending(false);
+      setMessages((current) =>
+        current.map((m) => (m.id === clientMsgId ? { ...m, isPending: false, isError: true } : m))
+      );
     }
   };
 
@@ -1143,10 +1186,20 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                   <time className="mt-1 px-1 text-[10px] text-slate-400 inline-flex items-center gap-1" dateTime={message.sentAt}>
                     {formatTime(message.sentAt)}
                     {isMine && (
-                      message.isRead ? (
-                        <CheckCheck size={12} className="text-blue-500 inline shrink-0" title="Đã xem" />
+                      message.isPending ? (
+                        <span title="Đang gửi..." className="inline-flex items-center">
+                          <Clock size={11} className="text-slate-400 animate-pulse inline shrink-0" />
+                        </span>
+                      ) : message.isError ? (
+                        <span title="Gửi thất bại" className="text-rose-500 font-bold inline shrink-0 text-[10px]">!</span>
+                      ) : message.isRead ? (
+                        <span title="Đã xem" className="inline-flex items-center">
+                          <CheckCheck size={12} className="text-blue-500 inline shrink-0" />
+                        </span>
                       ) : (
-                        <Check size={12} className="text-slate-400 inline shrink-0" title="Đã gửi" />
+                        <span title="Đã gửi" className="inline-flex items-center">
+                          <Check size={12} className="text-slate-400 inline shrink-0" />
+                        </span>
                       )
                     )}
                   </time>
@@ -1241,10 +1294,10 @@ export function FriendsView({ currentUserId }: FriendsViewProps) {
                 placeholder="Nhắn tin riêng…"
                 maxLength={2000}
                 className="min-w-0 flex-1 bg-transparent px-2 text-sm text-slate-800 outline-none placeholder:text-slate-400"
-                disabled={isSending || sessionMedia.mediaBusy}
+                disabled={sessionMedia.mediaBusy}
               />
             )}
-            <button type="submit" disabled={!draft.trim() || isSending || sessionMedia.mediaBusy || sessionMedia.isRecording} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Gửi tin nhắn">
+            <button type="submit" disabled={!draft.trim() || sessionMedia.mediaBusy || sessionMedia.isRecording} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Gửi tin nhắn">
               <Send size={16} />
             </button>
           </div>

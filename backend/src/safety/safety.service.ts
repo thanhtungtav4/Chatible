@@ -219,8 +219,13 @@ const persistReport: ReportPersistence = async (record) => {
 
 export class SafetyService {
   private blocks: Map<string, Set<string>> = new Map(); // blockerId -> Set of blockedUserIds
+  private negativeBlockCache: Map<string, number> = new Map(); // "min(uA,uB):max(uA,uB)" -> expiresAt timestamp
   private reports: Map<string, ReportRecord> = new Map(); // reportId -> report
   private auditLogs: AuditLogEntry[] = [];
+
+  private getBlockPairKey(userA: string, userB: string): string {
+    return userA < userB ? `${userA}:${userB}` : `${userB}:${userA}`;
+  }
 
   constructor(
     private readonly cryptoService: EnvelopeCryptoService,
@@ -240,6 +245,7 @@ export class SafetyService {
 
     await this.persistBlockRecord(blockerId, blockedId);
 
+    this.negativeBlockCache.delete(this.getBlockPairKey(blockerId, blockedId));
     if (!this.blocks.has(blockerId)) {
       this.blocks.set(blockerId, new Set());
     }
@@ -257,6 +263,7 @@ export class SafetyService {
     await db.delete(blockedUsers).where(
       and(eq(blockedUsers.blockerId, blockerId), eq(blockedUsers.blockedId, blockedId))
     );
+    this.negativeBlockCache.delete(this.getBlockPairKey(blockerId, blockedId));
     this.blocks.get(blockerId)?.delete(blockedId);
     return { status: 'UNBLOCKED' };
   }
@@ -392,8 +399,14 @@ export class SafetyService {
     if (aBlockedB || bBlockedA) return true;
     if (!isUuid(userA) || !isUuid(userB)) return false;
 
+    const pairKey = this.getBlockPairKey(userA, userB);
+    const cachedExpiresAt = this.negativeBlockCache.get(pairKey);
+    if (cachedExpiresAt && cachedExpiresAt > Date.now()) {
+      return false;
+    }
+
     const [block] = await db
-      .select({ id: blockedUsers.id })
+      .select({ id: blockedUsers.id, blockerId: blockedUsers.blockerId, blockedId: blockedUsers.blockedId })
       .from(blockedUsers)
       .where(
         or(
@@ -402,7 +415,19 @@ export class SafetyService {
         )
       )
       .limit(1);
-    return Boolean(block);
+
+    if (block) {
+      if (!this.blocks.has(block.blockerId)) {
+        this.blocks.set(block.blockerId, new Set());
+      }
+      this.blocks.get(block.blockerId)!.add(block.blockedId);
+      this.negativeBlockCache.delete(pairKey);
+      return true;
+    }
+
+    // Cache unblocked status for 60 seconds to eliminate repeated DB queries during chat
+    this.negativeBlockCache.set(pairKey, Date.now() + 60_000);
+    return false;
   }
 
   /**

@@ -71,6 +71,8 @@ export class ChatGateway {
   private socketToUser: Map<string, string> = new Map();          // socketId -> userId
   private readonly messageLimiter = new DistributedRateLimiter(5, 2000, 'rl:ws:msg');
   private readonly matchingLimiter = new DistributedRateLimiter(12, 60_000, 'rl:ws:match');
+  private readonly reactionLimiter = new DistributedRateLimiter(20, 3000, 'rl:ws:rxn');
+  private readonly callLimiter = new DistributedRateLimiter(5, 10_000, 'rl:ws:call');
   private pendingDisconnects = new Set<Promise<void>>();
   private pendingGroupEmits = new Set<Promise<void>>();
   private failedGroupDeliveries: Array<{ roomId: string; payload: unknown; attempts: number }> = [];
@@ -86,6 +88,16 @@ export class ChatGateway {
 
   private onlineStatsDebounceTimer: NodeJS.Timeout | null = null;
   private onlineStatsPeriodicTimer?: NodeJS.Timeout;
+  private recentMessagesByIdempotency = new Map<string, { id: string; acceptedAt: Date }>();
+  private emailVerificationSettingCache: { value: boolean; expiresAt: number } | null = null;
+
+  private cacheIdempotentMessage(key: string, id: string, acceptedAt: Date): void {
+    if (this.recentMessagesByIdempotency.size >= 2000) {
+      const oldestKey = this.recentMessagesByIdempotency.keys().next().value;
+      if (oldestKey) this.recentMessagesByIdempotency.delete(oldestKey);
+    }
+    this.recentMessagesByIdempotency.set(key, { id, acceptedAt });
+  }
 
   getOnlineCount(): number {
     return new Set(this.socketToUser.values()).size;
@@ -253,6 +265,8 @@ export class ChatGateway {
     this.socketToUser.clear();
     await this.messageLimiter.reset();
     await this.matchingLimiter.reset();
+    await this.reactionLimiter.reset();
+    await this.callLimiter.reset();
   }
 
   constructor(
@@ -472,12 +486,24 @@ export class ChatGateway {
           return;
         }
 
-        // CHAT-03: Idempotency check by clientMessageId
+        // CHAT-03: Idempotency check by clientMessageId (in-memory fast-path + DB fallback)
         const clientMessageId =
           typeof data.clientMessageId === 'string' && data.clientMessageId.trim().length > 0
             ? data.clientMessageId.trim().slice(0, 64)
             : null;
-        if (clientMessageId) {
+        const idemKey = clientMessageId ? `${session.sessionId}:${userId}:${clientMessageId}` : null;
+        if (clientMessageId && idemKey) {
+          const cached = this.recentMessagesByIdempotency.get(idemKey);
+          if (cached) {
+            if (ack) {
+              ack({
+                success: true,
+                messageId: cached.id,
+                sentAt: cached.acceptedAt.toISOString(),
+              });
+            }
+            return;
+          }
           const [existing] = await db
             .select({ id: messages.id, acceptedAt: messages.acceptedAt })
             .from(messages)
@@ -490,6 +516,7 @@ export class ChatGateway {
             )
             .limit(1);
           if (existing) {
+            this.cacheIdempotentMessage(idemKey, existing.id, existing.acceptedAt);
             if (ack) {
               ack({
                 success: true,
@@ -565,6 +592,9 @@ export class ChatGateway {
             isAdultContent: verifiedIsAdult,
             expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
           });
+          if (idemKey) {
+            this.cacheIdempotentMessage(idemKey, msgId, now);
+          }
         } catch (e) {
           console.error('[DB Message Insert Error]:', e);
           // DO NOT forward to partner if saving to DB failed!
@@ -740,7 +770,9 @@ export class ChatGateway {
       // 10. Typing indicators for Active Session or Friend Chat
       socket.on(SocketEvents.TYPING_START, async (data?: { targetUserId?: string }) => {
         let recipientId = data?.targetUserId;
-        if (!recipientId) {
+        if (recipientId) {
+          if (!(await this.friendsService.isFriend(authUser.userId, recipientId))) return;
+        } else {
           const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
           if (session && session.state === 'CHATTING') {
             recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
@@ -754,7 +786,9 @@ export class ChatGateway {
 
       socket.on(SocketEvents.TYPING_STOP, async (data?: { targetUserId?: string }) => {
         let recipientId = data?.targetUserId;
-        if (!recipientId) {
+        if (recipientId) {
+          if (!(await this.friendsService.isFriend(authUser.userId, recipientId))) return;
+        } else {
           const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
           if (session && session.state === 'CHATTING') {
             recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
@@ -769,8 +803,11 @@ export class ChatGateway {
       // 11. Message Emoji Reactions
       socket.on(SocketEvents.MESSAGE_REACTION, async (payload: { messageId: string; emoji: string; targetUserId?: string }) => {
         if (!payload?.messageId || !payload?.emoji || typeof payload.emoji !== 'string' || payload.emoji.length > 8) return;
+        if (!(await this.reactionLimiter.check(authUser.userId))) return;
         let recipientId = payload.targetUserId;
-        if (!recipientId) {
+        if (recipientId) {
+          if (!(await this.friendsService.isFriend(authUser.userId, recipientId))) return;
+        } else {
           const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
           if (session && session.state === 'CHATTING') {
             recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
@@ -787,7 +824,9 @@ export class ChatGateway {
       // 12. Message Read Receipts
       socket.on(SocketEvents.MESSAGE_READ, async (payload?: { messageId?: string; targetUserId?: string }) => {
         let recipientId = payload?.targetUserId;
-        if (!recipientId) {
+        if (recipientId) {
+          if (!(await this.friendsService.isFriend(authUser.userId, recipientId))) return;
+        } else {
           const session = await this.sessionCoordinator.getSessionByUser(authUser.userId);
           if (session && session.state === 'CHATTING') {
             recipientId = session.userAId === authUser.userId ? session.userBId : session.userAId;
@@ -802,7 +841,14 @@ export class ChatGateway {
 
       // 13. WebRTC P2P Voice Calling (Friends)
       socket.on(SocketEvents.CALL_OFFER, async (payload: { targetUserId: string; sdp: unknown }) => {
-        if (!payload?.targetUserId || !payload?.sdp) return;
+        if (!payload?.targetUserId || !payload?.sdp || payload.targetUserId === authUser.userId) return;
+        if (!(await this.callLimiter.check(authUser.userId))) {
+          socket.emit(SocketEvents.CALL_REJECT, {
+            targetUserId: payload.targetUserId,
+            reason: 'Bạn đang thực hiện cuộc gọi quá nhanh. Vui lòng thử lại sau.',
+          });
+          return;
+        }
         if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) {
           socket.emit(SocketEvents.CALL_REJECT, { targetUserId: payload.targetUserId, reason: 'Chỉ có thể gọi thoại khi đã là bạn bè.' });
           return;
@@ -842,11 +888,12 @@ export class ChatGateway {
         });
       });
 
-      socket.on(SocketEvents.CALL_REJECT, async (payload: { targetUserId: string }) => {
+      socket.on(SocketEvents.CALL_REJECT, async (payload: { targetUserId: string; reason?: string }) => {
         if (!payload?.targetUserId) return;
         if (!(await this.friendsService.isFriend(authUser.userId, payload.targetUserId))) return;
         this.io.to(this.userRoom(payload.targetUserId)).emit(SocketEvents.CALL_REJECT, {
           senderId: authUser.userId,
+          reason: typeof payload.reason === 'string' ? payload.reason.slice(0, 100) : undefined,
         });
       });
 
@@ -1035,12 +1082,20 @@ export class ChatGateway {
 
   private async isEmailVerificationBlocked(userId: string): Promise<boolean> {
     try {
-      const [setting] = await db
-        .select({ value: systemSettings.value })
-        .from(systemSettings)
-        .where(eq(systemSettings.key, 'auth.email_verification.required'))
-        .limit(1);
-      if (setting?.value !== 'true') return false;
+      const now = Date.now();
+      let required = false;
+      if (this.emailVerificationSettingCache && this.emailVerificationSettingCache.expiresAt > now) {
+        required = this.emailVerificationSettingCache.value;
+      } else {
+        const [setting] = await db
+          .select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, 'auth.email_verification.required'))
+          .limit(1);
+        required = setting?.value === 'true';
+        this.emailVerificationSettingCache = { value: required, expiresAt: now + 60_000 };
+      }
+      if (!required) return false;
 
       const [user] = await db
         .select({ emailVerifiedAt: users.emailVerifiedAt })
