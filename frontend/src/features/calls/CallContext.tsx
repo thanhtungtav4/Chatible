@@ -70,6 +70,7 @@ export function CallProvider({
   const incomingSdpRef = useRef<RTCSessionDescriptionInit | null>(null);
   const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const callStateRef = useRef(callState);
   callStateRef.current = callState;
@@ -83,6 +84,10 @@ export function CallProvider({
     if (callTimerRef.current) {
       clearInterval(callTimerRef.current);
       callTimerRef.current = null;
+    }
+    if (ringTimeoutRef.current) {
+      clearTimeout(ringTimeoutRef.current);
+      ringTimeoutRef.current = null;
     }
 
     if (localStreamRef.current) {
@@ -199,6 +204,15 @@ export function CallProvider({
           sdp: offer,
           callType: type,
         });
+
+        if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
+        ringTimeoutRef.current = setTimeout(() => {
+          if (callStateRef.current === 'outgoing') {
+            endCall();
+            setCallError('Đối phương không trả lời hoặc đang ngoại tuyến.');
+            setTimeout(() => setCallError(null), 4000);
+          }
+        }, 45_000);
       } catch (err) {
         cleanupCall();
         const msg = err instanceof Error ? err.message : 'Không thể truy cập Microphone/Camera.';
@@ -213,6 +227,10 @@ export function CallProvider({
     const sdp = incomingSdpRef.current;
     const caller = callerInfoRef.current;
     if (!sdp || !caller) return;
+    if (ringTimeoutRef.current) {
+      clearTimeout(ringTimeoutRef.current);
+      ringTimeoutRef.current = null;
+    }
     stopCallRingtone();
     triggerHaptic('success');
 
@@ -346,12 +364,23 @@ export function CallProvider({
         setCallState('incoming');
         startCallRingtone();
         triggerHaptic('warning');
+
+        if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
+        ringTimeoutRef.current = setTimeout(() => {
+          if (callStateRef.current === 'incoming') {
+            rejectCall('Cuộc gọi nhỡ.');
+          }
+        }, 45_000);
       }
     );
 
     socket.on(
       SocketEvents.CALL_ANSWER,
       async (data: { responderId: string; sdp: RTCSessionDescriptionInit }) => {
+        if (ringTimeoutRef.current) {
+          clearTimeout(ringTimeoutRef.current);
+          ringTimeoutRef.current = null;
+        }
         stopCallRingtone();
         if (peerConnectionRef.current) {
           try {
@@ -410,7 +439,16 @@ export function CallProvider({
       setTimeout(() => setCallError(null), 4000);
     });
 
+    const handleBeforeUnload = () => {
+      const activeCaller = callerInfoRef.current?.id || partnerInfoRef.current?.id;
+      if (callStateRef.current !== 'idle' && activeCaller && socket.connected) {
+        socket.emit(SocketEvents.CALL_END, { targetUserId: activeCaller });
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       const activeCaller = callerInfoRef.current?.id || partnerInfoRef.current?.id;
       if (callStateRef.current !== 'idle' && activeCaller && socket.connected) {
         socket.emit(SocketEvents.CALL_END, { targetUserId: activeCaller });

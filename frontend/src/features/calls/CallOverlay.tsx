@@ -49,18 +49,22 @@ export function CallOverlay() {
 
   // Bind media streams to video & audio elements
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
+    if (localVideoRef.current) {
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream, callState, isMinimized]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
+    if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = remoteStream;
     }
-    if (remoteAudioRef.current && remoteStream) {
+    if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current.play().catch(() => undefined);
+      if (remoteStream) {
+        remoteAudioRef.current.play().catch(() => undefined);
+      } else {
+        remoteAudioRef.current.pause();
+      }
     }
   }, [remoteStream, callState, isMinimized]);
 
@@ -249,11 +253,12 @@ export function CallOverlay() {
           <div className="relative flex flex-1 items-center justify-center p-4 overflow-hidden">
             {callType === 'video' ? (
               <div className="relative h-full w-full max-w-4xl overflow-hidden rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center">
-                {/* Remote Video */}
+                {/* Remote Video (Audio handled by root audio element to prevent echo & preserve sound when minimized) */}
                 <video
                   ref={remoteVideoRef}
                   autoPlay
                   playsInline
+                  muted
                   className="h-full w-full object-cover sm:object-contain bg-black"
                 />
 
